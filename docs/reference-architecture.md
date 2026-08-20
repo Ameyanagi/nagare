@@ -21,7 +21,7 @@ not package, build, test, or benchmark dependencies.
 | --- | --- | --- | --- |
 | [enterpolation](https://github.com/NicolasKlenert/enterpolation) | `4d0cb2fdeb4ed7413a785968658c518a6cefc047`, crate `0.3.0` | `MIT OR Apache-2.0` in `Cargo.toml`, `LICENSE-MIT`, and `LICENSE-APACHE` | `src/linear/{mod,builder,error}.rs`, `src/base/{list,signal,adaptors,space}.rs`, and `src/bspline/{mod,builder,error}.rs` |
 | [Interpolations.jl](https://github.com/JuliaMath/Interpolations.jl) | `1564d003955a2c5aa84076a095e3cdf729fa9603`, package `0.16.3` | MIT in `LICENSE.md` | `src/Interpolations.jl`, `src/convenience-constructors.jl`, `src/gridded/`, `src/extrapolation/`, `src/monotonic/`, and `src/b-splines/` |
-| [SciPy](https://github.com/scipy/scipy) | `a2c4d68b3cab98a0e5773ea0016e7c4109da6511`, source version `2.0.0.dev0` | BSD-3-Clause in `LICENSE.txt` | `scipy/interpolate/__init__.py`, `_cubic.py`, `_interpolate.py`, and the corresponding `tests/test_polyint.py` contracts |
+| [SciPy](https://github.com/scipy/scipy) | `a2c4d68b3cab98a0e5773ea0016e7c4109da6511`, source version `2.0.0.dev0` | BSD-3-Clause in `LICENSE.txt` | `scipy/interpolate/__init__.py`, `_cubic.py`, `_interpolate.py`, and the corresponding `tests/{test_polyint,test_interpolate}.py` contracts |
 
 These exact revisions can be recovered without relying on a moving branch:
 
@@ -75,12 +75,14 @@ one input-preparation path checks dimension, count, finiteness, and strict
 ordering. PCHIP computes shape-preserving Fritsch-Butland tangents, Akima
 computes local weighted tangents from extended secants, and cubic spline solves
 for derivatives under several boundary modes; all three emit a piecewise
-power-basis object. The
+power-basis object. The PCHIP and cubic-spline suites in
 [`test_polyint.py`](https://github.com/scipy/scipy/blob/a2c4d68b3cab98a0e5773ea0016e7c4109da6511/scipy/interpolate/tests/test_polyint.py)
-organization validates knot passage, derivative continuity, boundary
-conditions, two-point reductions, shapes, and invalid inputs. Nagare adopts
-the separation and categories of evidence, not SciPy's fixtures, array
-semantics, broad boundary matrix, dependencies, or extrapolation defaults.
+and the Akima suite in
+[`test_interpolate.py`](https://github.com/scipy/scipy/blob/a2c4d68b3cab98a0e5773ea0016e7c4109da6511/scipy/interpolate/tests/test_interpolate.py)
+validate knot passage, derivative continuity, boundary conditions, two-point
+reductions, shapes, and invalid inputs. Nagare adopts the separation and
+categories of evidence, not SciPy's fixtures, array semantics, broad boundary
+matrix, dependencies, or extrapolation defaults.
 
 ### What the references validate
 
@@ -167,21 +169,37 @@ curve trait or exposed as a second definition of knot boundaries.
 
 `ExtrapolationPolicy` remains the single owner of out-of-domain behavior:
 
-| Policy | Below the domain | Above the domain |
-| --- | --- | --- |
-| `ERROR` | raise | raise |
-| `CLAMP` | return the first ordinate | return the final ordinate |
-| `LINEAR` | extend the value at the first knot using its right derivative | extend the value at the final knot using its left derivative |
+| Policy | Value outside the domain | First derivative outside | Second derivative outside |
+| --- | --- | --- | --- |
+| `ERROR` | raise | raise | raise |
+| `CLAMP` | nearest endpoint ordinate | `0.0` | `0.0` |
+| `LINEAR` | endpoint-tangent continuation | endpoint's in-domain one-sided derivative | `0.0` |
 
 For a cubic interpolator, `LINEAR` means endpoint-tangent continuation. It does
 not continue the first or last cubic polynomial outside its segment. This
 preserves the meaning of the policy across linear, natural cubic, PCHIP, and
 Akima interpolators and avoids cubic growth that a caller did not request.
 
-Non-finite queries always raise before policy dispatch. Finite linear
-extrapolation may return IEEE signed infinity when the represented endpoint
-line is outside the finite `Float64` range, but it must never create NaN from
-finite state.
+An endpoint itself is in-domain: all observations there use the adjacent
+segment polynomial, not the outside constant or line. At an exact interior
+knot, value evaluation still returns the stored ordinate, while derivatives
+use the right-hand segment; the final knot uses the final segment's left-hand
+limit. Natural cubic is C2, so this side rule is unobservable there. It freezes
+the `second_derivative` result for later C1-only PCHIP and Akima curves, whose
+second derivatives need not agree at a knot.
+
+Non-finite queries always raise before policy dispatch. Evaluation uses
+scale-aware products, quotients, and linear combinations. If the exact
+real-number result represented by finite valid state is within the finite
+`Float64` range, evaluation must return a finite value rather than overflow an
+intermediate. A result beyond that range returns IEEE signed infinity, and a
+nonzero result below the subnormal range rounds to signed zero. A known-zero
+polynomial numerator is handled before interval-scale division. No value or
+derivative operation may create NaN from finite valid state. In particular,
+`LINEAR` extrapolation evaluates its endpoint value plus tangent displacement
+directly from the tangent's scale pair as a scale-aware two-term linear
+combination. It does not first round an out-of-range tangent to infinity when
+the tangent-times-displacement result is representable.
 
 ## Scalar and batch evaluation
 
@@ -201,11 +219,16 @@ var values = interpolator.evaluate_many(queries)
 `evaluate_many` will:
 
 - preserve query order and return an owned `List[Float64]`;
-- be exactly equivalent to repeated scalar calls;
+- produce results exactly equal to repeated scalar calls on the same valid
+  state;
 - fail at the first invalid query without returning a partial result; and
 - avoid scalar/collection overloading or a Nagare-specific array abstraction.
 
-The first implementation is a thin loop. Reusing interval state for sorted
+Every batch call invokes the same operation-entry validator exactly once,
+including when `queries` is empty, then loops over a private
+`_evaluate_validated` scalar kernel. It does not call the public `evaluate`
+method per query and therefore does not turn mandatory `O(n)` mutation
+validation into `O(query_count * n)`. Reusing interval state for sorted
 queries, SIMD, parallel execution, output buffers, and multi-dimensional
 broadcasting require separate evidence and are not part of the initial batch
 contract.
@@ -241,18 +264,31 @@ root API
 
 `_PiecewiseCubic1D` is an internal evaluated representation, analogous in role
 but not implementation to SciPy's `PPoly` and Interpolations.jl's monotonic
-coefficient object. For segment `i`, it stores four coefficients for Horner
-evaluation in a dimensionless local coordinate `t`:
+coefficient object. It owns one `List[_CubicSegment]`; this list is the sole
+prepared-value authority. A segment record contains `value_origin`, a finite
+positive `value_scale`, and four finite dimensionless coefficients. Evaluation
+uses a dimensionless local coordinate `t`:
 
 ```text
 t = (x - knots[i]) / (knots[i + 1] - knots[i])
-p_i(t) = ((d_i * t + c_i) * t + b_i) * t + a_i
+q_i(t) = ((d_i * t + c_i) * t + b_i) * t + a_i
+p_i(t) = value_origin_i + value_scale_i * q_i(t)
 ```
 
 The stable segment-parameter routine already used by linear interpolation is
 the sole owner of overflow-resistant `t` calculation. First- and
-second-derivative evaluation applies the interval scale explicitly; value
-evaluation does not form powers of a potentially extreme knot difference.
+second-derivative evaluation applies the interval and value scales with
+exponent-aware arithmetic; value evaluation does not form powers of a
+potentially extreme knot difference. The final origin-plus-scaled-polynomial
+operation uses the same stable two-term combination required by linear
+extrapolation.
+
+Natural cubic construction uses one table-wide ordinate scale while solving,
+then emits segment records. Future PCHIP and Akima construction instead chooses
+coordinate and ordinate scales from only the local stencil that determines a
+knot tangent. Its Hermite builder converts that tangent into each adjacent
+segment's local representation. A sample outside that stencil cannot alter the
+scale, arithmetic, or stored coefficients of an unaffected segment.
 
 PCHIP and Akima differ only in how knot tangents are chosen. Both feed the
 same independently implemented Hermite-to-power coefficient builder. Natural
@@ -272,7 +308,7 @@ Each algorithm constructor owns all state required by later evaluation:
 | Algorithm | Construction | Stored state | Scalar observation |
 | --- | --- | --- | --- |
 | Linear | validate and take ownership, `O(n)` | samples and policy | revalidate `O(n)`, locate `O(log n)`, evaluate one segment |
-| Natural cubic | validate, scale, solve one tridiagonal system, and form coefficients, `O(n)` | samples, four coefficient arrays, endpoint derivatives, scale state, and policy | revalidate samples and cross-state cubic invariants `O(n)`, locate `O(log n)`, Horner evaluation |
+| Natural cubic | validate, scale, solve one tridiagonal system, and form coefficients, `O(n)` | samples, one segment-record list, and policy | run one prepared-state validator `O(n)`, locate `O(log n)`, Horner evaluation |
 | PCHIP | validate, compute secants and shape-preserving tangents, form Hermite coefficients, `O(n)` | same evaluated state as natural cubic | same cubic evaluator |
 | Akima | validate, extend local secants, compute weighted tangents, form Hermite coefficients, `O(n)` | same evaluated state as natural cubic | same cubic evaluator |
 
@@ -281,10 +317,21 @@ scalar evaluation. Construction and evaluation remain separate benchmark
 families. A future enforceably sealed representation may allow construction
 validation to be amortized; current Mojo behavior does not.
 
-Coefficient arrays have exactly `knot_count - 1` elements each. Endpoint
-derivatives are stored or deterministically recoverable from the endpoint
-coefficients so `LINEAR` extrapolation does not call algorithm-specific
-construction logic.
+Construction moves each input list exactly once into `_ValidatedSamples1D` and
+then owns that table through `_PiecewiseCubic1D`; it does not retain a second
+sample copy. The segment list has exactly `knot_count - 1` elements. It stores
+neither natural moments nor PCHIP/Akima knot tangents after coefficient
+construction. Endpoint derivatives are always derived from the first or final
+segment record, so there is no independently mutable endpoint cache.
+
+Every public value, first-derivative, second-derivative, and batch observation
+enters through exactly one `_validate_prepared` call. That validator checks the
+sample table, policy, segment count, origins/scales/coefficients, knot passage,
+continuity and the algorithm-specific relation before any query indexing.
+Private `_evaluate_validated`, `_derivative_validated`, and
+`_second_derivative_validated` kernels require that entry proof and do not
+repeat it. This is a validation boundary, not a claim that underscore-prefixed
+Mojo storage is private.
 
 ## Errors and numerical conditioning
 
@@ -300,12 +347,12 @@ Construction raises before producing an interpolator for:
 - any non-finite stored scale or coefficient.
 
 Observation raises for a non-finite query, `ERROR` extrapolation, or externally
-mutated sample/coefficient state that violates structural, numerical, or
+mutated sample/segment state that violates structural, numerical, or
 algorithm-specific cross-state invariants. Natural cubic validation checks
-knot passage, C1/C2 joins, and natural boundaries. PCHIP and Akima validation
-recomputes their local tangent relation before trusting exposed coefficient
-storage. No constructor returns a partially prepared object, and no invalid
-input is repaired.
+knot passage, C1/C2 joins, natural boundaries, and the coefficient equations
+below. PCHIP and Akima validation recomputes their local tangent relation before
+trusting exposed coefficient storage. No constructor returns a partially
+prepared object, and no invalid input is repaired.
 
 Natural cubic accepts two samples as the unique straight line satisfying the
 natural endpoint conditions. PCHIP also accepts two samples and reduces to
@@ -316,38 +363,169 @@ obtain a small-sample behavior accidentally through out-of-bounds indexing.
 ### Conditioning strategy
 
 Finite inputs do not imply that every intermediate in a naive formula is
-representable. Cubic work therefore follows these gates:
+representable. The following contract uses `epsilon = 2^-52`, the binary64
+distance from `1.0` to its successor. All `max`, norm, ratio, product, and
+linear-combination operations named scale-aware below use exponent factoring
+or an equivalent overflow-safe implementation; they may not first form an
+overflowing product and then try to repair it.
 
-1. Compute each local parameter with the existing scaled-coordinate path;
-   never require `x1 - x0` to be finite merely to evaluate a segment.
-2. Construct with dimensionless knot widths derived from one table-wide
-   positive coordinate scale. Use direct subtraction when representable and a
-   consistently scaled subtraction when it is not. Reject a width that becomes
-   zero at working precision rather than divide by it.
-3. Normalize ordinates by one finite positive table scale before building or
-   solving for cubic coefficients. Store the output scale with dimensionless
-   coefficients instead of forming avoidably overflowing ordinate deltas or
-   powers of interval widths.
-4. Scale each tridiagonal row before elimination, verify every pivot before
-   division, and verify the residual of the solved natural-spline system.
-5. Form PCHIP weighted harmonic tangents without multiplying two large
-   secants. Sign changes and zero secants select a zero tangent before any
-   reciprocal calculation.
-6. Form Akima weights with scaled absolute differences. When both weights are
-   zero, use the documented symmetric average rather than a `0 / 0` result.
-7. Validate every prepared coefficient and scale. A numerically unusable table
-   is an explicit construction error, not a NaN-bearing interpolator.
+### Natural-cubic normalization and equations
 
-The exact residual tolerance and scaling equations are deliverables of the
-coefficient-construction issue, recorded before implementation fixtures are
-accepted. They may not be widened solely because an upstream implementation
-accepts a case.
+For samples `(x_i, y_i)`, define the finite positive coordinate scale
 
-For an in-domain query with a finite mathematical result, evaluation should
-avoid intermediate overflow. As already documented for linear interpolation,
-tables spanning nearly the entire `Float64` range can lose a small offset after
-normalization. Tests in that region require finite, bounded, deterministic
-behavior; they do not promise exact affine recovery below available precision.
+```text
+X = max(abs(x_0), abs(x_(n-1)))
+```
+
+Strict ordering with at least two binary64 knots guarantees `X > 0`. Define
+the normalized width `h_i` without requiring the physical subtraction to fit:
+
+```text
+if x_(i+1) - x_i is finite:
+    h_i = (x_(i+1) - x_i) / X
+else:
+    h_i = x_(i+1) / X - x_i / X
+```
+
+Every `h_i` must be finite and strictly positive. A zero normalized width is a
+construction error, even when the original binary64 knots compare distinct,
+because the selected working representation cannot distinguish the interval.
+The direct-subtraction branch preserves adjacent large knots; the scaled branch
+supports opposite-sign intervals whose physical width exceeds `Float64.max`.
+
+Define the table ordinate scale and normalized ordinates as
+
+```text
+Y = max_i(abs(y_i))
+if Y == 0: Y = 1
+v_i = y_i / Y
+```
+
+`Y` is construction scratch derived from the owned samples, not a second
+stored authority. Natural cubic solves for normalized-coordinate moments
+`M_i = d^2 v / d u^2`, where `du` has widths `h_i`. The natural boundary rows
+are exactly
+
+```text
+M_0 = 0
+M_(n-1) = 0
+```
+
+and each interior row `i = 1 .. n-2` is
+
+```text
+h_(i-1) M_(i-1)
++ 2 (h_(i-1) + h_i) M_i
++ h_i M_(i+1)
+= 6 ((v_(i+1) - v_i) / h_i
+     - (v_i - v_(i-1)) / h_(i-1))
+```
+
+The secants and right side use scale-aware differences and division. A
+mathematically representable finite right side must not fail because a naive
+intermediate overflowed. If a required normalized right side or solved moment
+itself is outside finite binary64, this representation is numerically unusable
+and construction raises rather than storing infinity.
+
+Two samples take `M_0 = M_1 = 0` without allocating a system. Otherwise the
+solver eliminates only the `k = n - 2` interior unknowns. Before Thomas
+elimination, divide each interior equation by its positive diagonal
+`2 * (h_(i-1) + h_i)`. Every resulting pivot must be finite and strictly
+greater than
+
+```text
+pivot_tolerance = 64 * epsilon
+```
+
+and every modified right side and solution value must remain finite. This is
+a fixed decision on the row-normalized system, not an absolute threshold in
+the caller's coordinate units.
+
+After back-substitution, recompute the residual against the original
+unequilibrated interior equations. Let `B` be that `k` by `k` tridiagonal
+matrix, `m` the interior solution, `r` its right side, and
+
+```text
+R = norm_inf(B m - r)
+D = norm_inf(B) * norm_inf(m) + norm_inf(r)
+residual_tolerance = 256 * epsilon * max(1, k)
+```
+
+The norm, matrix-vector products, and ratio are scale-aware. If `D == 0`,
+accept only `R == 0`; otherwise require `R / D <= residual_tolerance`. Failure
+is an unusable-system construction error. Neither pivot nor residual tolerance
+may be widened to match an upstream result.
+
+For each segment, natural construction emits `value_origin = 0`,
+`value_scale = Y`, and the only stored coefficient authority:
+
+```text
+a_i = v_i
+b_i = (v_(i+1) - v_i) - h_i^2 (2 M_i + M_(i+1)) / 6
+c_i = h_i^2 M_i / 2
+d_i = h_i^2 (M_(i+1) - M_i) / 6
+```
+
+These expressions use exponent-aware products and stable sums. All emitted
+fields must be finite. Moments are discarded. Evaluation differentiates the
+dimensionless polynomial with the scale pairs
+
+```text
+dp/dx  = value_scale * q_i'(t)  / (X * h_i)
+d2p/dx2 = value_scale * q_i''(t) / (X * h_i)^2
+```
+
+without materializing an overflowing `X * h_i` or its square. Endpoint
+derivatives for `LINEAR` are these expressions at `t = 0` and `t = 1`; they are
+never cached.
+
+### Prepared-state validation
+
+The operation-entry validator recomputes `X`, `Y`, and all normalized widths
+from the current owned samples. Structural and finite checks are exact. Scaled
+equation, knot-passage, C1, C2, and boundary comparisons use
+
+```text
+state_tolerance = 512 * epsilon * max(1, n)
+scaled_error(a, b) = abs(a - b) / max(1, abs(a), abs(b))
+```
+
+with scale-aware subtraction and division, and require
+`scaled_error <= state_tolerance`. Natural boundary expressions are compared
+in normalized-moment space before conversion to possibly unrepresentable
+physical derivatives. For natural cubic, every segment must have exact
+`value_origin == 0` and the recomputed `value_scale == Y`; the validator derives
+candidate endpoint moments from `c_i`, `d_i`, and `h_i`, checks that adjacent
+segments imply the same shared moment, then checks the two zero boundary
+moments, interior system, and `a_i`/`b_i` conversion equations. Moment recovery
+uses the same exponent-aware ratios as construction. The same rules apply at
+construction and observation; a wider mutation tolerance is not permitted. A
+coordinated mutation is accepted only when the complete prepared state still
+describes a valid interpolant under these rules.
+
+### Later local monotone-cubic arithmetic
+
+PCHIP and Akima remain after v0.1. Their issues use a coordinate scale and an
+ordinate scale chosen only from the exact sample stencil that determines each
+knot tangent. A segment's origin and positive scale are derived from the union
+of its two endpoint-tangent stencils; an all-zero stencil uses scale `1`.
+Therefore a distant sample cannot perturb an unaffected segment merely by
+changing a table-wide normalization constant.
+
+PCHIP forms weighted harmonic tangents without multiplying two large secants;
+a sign change or zero secant selects zero before reciprocal arithmetic. Akima
+forms scaled absolute secant differences; when both weights are zero it uses
+the documented symmetric average rather than `0 / 0`. Both pass one canonical
+scale-pair tangent into the shared Hermite builder. The algorithm issues must
+freeze their exact stencil endpoints and formulas before accepting fixtures;
+they do not change the natural-cubic v0.1 gate.
+
+For every algorithm, a finite mathematical observation within binary64 range
+must survive avoidable intermediate overflow. Tables spanning nearly the full
+range can still lose an offset below available precision, return signed
+infinity for an out-of-range result, or round a tiny result to signed zero as
+specified above. They must remain bounded when the mathematical interpolant is
+bounded and must never return NaN from finite valid state.
 
 ## Adopted and rejected ideas
 
@@ -416,17 +594,22 @@ SciPy or Interpolations.jl may be used as a secondary cross-check, never as the
 sole oracle.
 
 - **Shared:** exact knots; constant and affine data; irregular spacing; two
-  samples; each extrapolation policy; non-finite rejection; and externally
-  mutated sample/coefficient state.
+  samples; value/first-/second-derivative behavior for each extrapolation
+  policy; right-hand derivative selection at an interior knot; non-finite
+  rejection; representable cancellation and signed infinity/zero outcomes;
+  and externally mutated sample/segment state.
 - **Natural cubic:** a hand-solved three- and four-knot system, tridiagonal
-  equation residuals, natural endpoint second derivatives, and independently
-  evaluated interior points.
+  equation residuals, row-normalized pivot and backward-residual rejection
+  boundaries, natural endpoint second derivatives, coefficient-to-moment
+  recovery, and independently evaluated interior points.
 - **PCHIP:** two-point linear reduction, zero tangents at a plateau or secant
   sign change, one-sided endpoint selection, and weighted-harmonic interior
-  tangents.
+  tangents, including an extreme distant ordinate that leaves an unrelated
+  local stencil unchanged.
 - **Akima:** extended endpoint secants, a nonzero-weight local example, an
   equal-weight fallback, and a case that distinguishes classical Akima from
-  modified Akima. The initial type implements only classical Akima.
+  modified Akima, including the same local-scale independence check. The
+  initial type implements only classical Akima.
 
 ### Properties and invariants
 
@@ -436,15 +619,17 @@ sole oracle.
 - PCHIP is C1 and does not overshoot the endpoint hull on each monotone
   segment;
 - Akima is C1, preserves constant and affine data, and changing a distant
-  sample outside the local stencil does not change an unaffected tangent;
+  sample outside the declared local stencil does not change an unaffected
+  tangent or segment record;
 - batch output equals repeated scalar evaluation exactly under the same query
-  order;
+  order, while mutated state is rejected once even for an empty query list;
 - translating or positively scaling well-conditioned coordinates and values
   produces the correspondingly transformed interpolant within a declared
   tolerance; and
 - deterministic extreme tables cover subnormal spacing, adjacent large
   values, mixed-sign maximum-scale coordinates, uneven interval ratios,
-  overflow-directed linear extrapolation, and mutation after construction.
+  overflow-directed value and derivative evaluation, cancellation in linear
+  extrapolation, and mutation after construction.
 
 Continuity tests evaluate the left and right coefficient formulas at the knot;
 they do not compare two calls that both select the same right-biased interval.
@@ -486,13 +671,16 @@ validation gates from `docs/v0.1-plan.md`.
 3. **NAG-005A — shared validated samples and cubic representation.** Extract
    shared table validation without changing root API; add internal
    `_PiecewiseCubic1D`, structural/mutation validation, exact-knot evaluation,
-   and first/second derivative formula tests. Gate: hand-authored coefficients
-   exercise every segment and policy without a spline solver; stale samples or
-   coefficients fail before indexing or evaluation.
+   and first/second derivative formula tests. Gate: one segment-record list is
+   the coefficient authority; endpoint derivatives are derived; hand-authored
+   coefficients exercise every segment, derivative-side rule, representability
+   outcome, and policy without a spline solver; stale samples or segments fail
+   in the single entry validator before indexing or evaluation.
 4. **NAG-005B — natural cubic system construction.** Implement dimensionless
-   width/value scaling and a pure-Mojo tridiagonal solver with pivot, finite,
-   and residual gates. Gate: hand-solved systems, affine reduction, invalid and
-   unusable-system tests.
+   width/value scaling and the equations, normalized pivot threshold,
+   backward-residual test, and coefficient conversion specified above in a
+   pure-Mojo tridiagonal solver. Gate: hand-solved systems, affine reduction,
+   threshold boundary fixtures, invalid and unusable-system tests.
 5. **NAG-006 — natural cubic public evaluation.** Export
    `NaturalCubicSpline`; connect construction to the internal cubic evaluator
    and all three policies. Gate: exact knots, C0/C1/C2, natural boundaries,
@@ -509,9 +697,9 @@ validation gates from `docs/v0.1-plan.md`.
    reuse the Hermite builder. Gate: local-stencil, equal-weight, affine, C1,
    extreme, mutation, and package smoke tests.
 9. **NAG-010 — explicit batch evaluation.** Add `evaluate_many` consistently
-   after all scalar contracts are stable. Gate: exact scalar equivalence,
-   order preservation, first-error behavior, empty input, and construction vs
-   batch benchmark separation.
+   after all scalar contracts are stable. Gate: one entry validation even for
+   empty input, exact scalar-result equivalence, order preservation, first-error
+   behavior, and construction vs batch benchmark separation.
 10. **NAG-011 — cubic benchmark extension.** Add versioned natural cubic,
     PCHIP, and Akima construction/evaluation cases only where the matrix makes
     an architectural decision. Gate: checked manifest shape and checksums,
