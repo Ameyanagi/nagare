@@ -23,13 +23,14 @@ public root
 ├── ExtrapolationPolicy       nominal out-of-domain behavior
 ├── locate_interval           validated standalone lookup
 └── LinearInterpolator        validated owning interpolant
-       ├── search             internal unchecked lookup after validation
+       ├── search             internal lookup over construction-validated data
        └── extrapolation      shared semantic policy
 ```
 
-The unchecked interval locator is internal and is called only after the
-current public operation has established the finite, strictly increasing knot
-invariant.
+The unchecked interval locator is internal and operates on the finite,
+strictly increasing knot invariant established at interpolant construction.
+The standalone public locator still accepts raw user input and validates it on
+each call.
 
 The package root exports only the small documented public surface. Algorithms,
 generated tables, platform details, and backend implementations remain in
@@ -38,18 +39,19 @@ collections are preferred over an ecosystem-specific universal container.
 
 ## Data flow
 
-Input validation occurs at the public boundary. Internal layers operate on
-explicit typed values, produce deterministic outputs for deterministic inputs,
-and report invalid state rather than silently replacing it with a default.
-I/O, clocks, randomness, terminal queries, filesystem access, and accelerator
+Input validation occurs at the relevant public boundary: interpolant
+construction validates stored tables, standalone search validates its raw knot
+input, and evaluation validates each query. Internal layers operate on trusted
+typed values and produce deterministic outputs for deterministic inputs. I/O,
+clocks, randomness, terminal queries, filesystem access, and accelerator
 selection stay at explicit effect or backend boundaries.
 
 `LinearInterpolator` owns its `List[Float64]` inputs, but Mojo 1.0 does not make
-underscore-prefixed fields private. A caller can therefore mutate the stored
-lists. Every public numeric or table observation performs `O(n)` validation
-before any indexing, followed by `O(log n)` interval search when evaluation is
-needed. This explicit safety cost prevents stale construction-time invariants
-from becoming memory-unsafe indexing assumptions.
+underscore-prefixed fields private. Nagare treats those fields as private by
+convention, and direct mutation is outside the contract. Read-only metadata is
+`O(1)` and evaluation performs `O(log n)` interval search without rescanning
+the table. Callers who perform unusual direct access can request an explicit
+`O(n)` checkpoint through `validate()`.
 
 Benchmark fixture generation and timing stay under `benchmarks/`; they are not
 root exports and are not installed as library modules. The benchmark calls only

@@ -34,13 +34,13 @@ The baseline covers 26 cases:
 Construction timing includes copying the input lists, validation, allocation,
 destruction of the previous interpolator, and one `std.benchmark.keep` barrier
 per construction so overwritten instances cannot be eliminated. Evaluation
-timing uses one constructed interpolator, but each public `evaluate` call
-intentionally includes the current `O(n)` table revalidation followed by
-interval search. Query generation and checksum accumulation are also inside the
-measured loop; they must remain unchanged when comparing two revisions. Every
-timed fixed query is passed through `std.benchmark.black_box` directly into
-`evaluate`, preventing the compiler from assuming or hoisting that input. Every
-timed result crosses `std.benchmark.keep` to prevent dead-code elimination.
+timing uses one construction-validated interpolator, and each public `evaluate`
+call performs interval search without rescanning the stored table. Query
+generation and checksum accumulation are also inside the measured loop; they
+must remain unchanged when comparing two revisions. Every timed fixed query is
+passed through `std.benchmark.black_box` directly into `evaluate`, preventing
+the compiler from assuming or hoisting that input. Every timed result crosses
+`std.benchmark.keep` to prevent dead-code elimination.
 
 The runner performs two complete warmup rounds and seven measured samples. It
 reports the minimum total elapsed nanoseconds, not a derived throughput claim.

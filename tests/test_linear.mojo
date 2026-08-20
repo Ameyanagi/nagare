@@ -36,8 +36,18 @@ def reference_interpolator(
     )
 
 
+def metadata_matches_reference(interpolator: LinearInterpolator) -> Bool:
+    """Exercise every metadata accessor from a non-raising function."""
+    return (
+        interpolator.knot_count() == 4
+        and interpolator.domain_start() == 0.0
+        and interpolator.domain_end() == 5.0
+    )
+
+
 def test_linear_interpolator_metadata_and_exact_knots() raises:
     var interpolator = reference_interpolator()
+    assert_true(metadata_matches_reference(interpolator))
     assert_equal(interpolator.knot_count(), 4)
     assert_equal(interpolator.domain_start(), 0.0)
     assert_equal(interpolator.domain_end(), 5.0)
@@ -139,53 +149,40 @@ def test_constructor_rejects_invalid_tables() raises:
         _ = LinearInterpolator([0.0, 1.0], [1.0, Float64("nan")])
 
 
-def test_mutated_tables_are_revalidated_before_every_public_observation() raises:
-    var count_observation = reference_interpolator()
-    count_observation._knots = [0.0]
+def test_explicit_validate_rechecks_mutated_tables() raises:
+    var valid = reference_interpolator()
+    valid.validate()
+
+    var short_knots = reference_interpolator()
+    short_knots._knots = [0.0]
     with assert_raises(contains="at least two"):
-        _ = count_observation.knot_count()
+        short_knots.validate()
 
-    var start_observation = reference_interpolator()
-    start_observation._values = [1.0]
+    var mismatched_values = reference_interpolator()
+    mismatched_values._values = [1.0]
     with assert_raises(contains="equal length"):
-        _ = start_observation.domain_start()
+        mismatched_values.validate()
 
-    var end_observation = reference_interpolator()
-    end_observation._values[1] = Float64("inf")
+    var non_finite_values = reference_interpolator()
+    non_finite_values._values[1] = Float64("inf")
     with assert_raises(contains="values must be finite"):
-        _ = end_observation.domain_end()
+        non_finite_values.validate()
 
-    var evaluation = reference_interpolator()
-    evaluation._knots[1] = evaluation._knots[0]
+    var duplicate_knots = reference_interpolator()
+    duplicate_knots._knots[1] = duplicate_knots._knots[0]
     with assert_raises(contains="strictly increasing"):
-        _ = evaluation.evaluate(0.25)
+        duplicate_knots.validate()
 
-    evaluation = reference_interpolator()
-    evaluation._knots[1] = Float64("nan")
+    var non_finite_knots = reference_interpolator()
+    non_finite_knots._knots[1] = Float64("nan")
     with assert_raises(contains="knots must be finite"):
-        _ = evaluation.evaluate(0.25)
+        non_finite_knots.validate()
 
 
-def test_policy_constants_are_distinct_and_typed_construction_is_total() raises:
+def test_policy_constants_are_distinct() raises:
     assert_true(ExtrapolationPolicy.ERROR != ExtrapolationPolicy.CLAMP)
     assert_true(ExtrapolationPolicy.ERROR != ExtrapolationPolicy.LINEAR)
     assert_true(ExtrapolationPolicy.CLAMP != ExtrapolationPolicy.LINEAR)
-    assert_true(ExtrapolationPolicy() == ExtrapolationPolicy.ERROR)
-    assert_true(ExtrapolationPolicy(False) == ExtrapolationPolicy.CLAMP)
-    assert_true(ExtrapolationPolicy(True) == ExtrapolationPolicy.LINEAR)
-
-
-def test_every_reachable_policy_mutation_has_defined_semantics() raises:
-    var interpolator = reference_interpolator()
-    interpolator._extrapolation._extends_linearly = None
-    with assert_raises(contains="outside the knot domain"):
-        _ = interpolator.evaluate(-1.0)
-
-    interpolator._extrapolation._extends_linearly = False
-    assert_equal(interpolator.evaluate(-1.0), 1.0)
-
-    interpolator._extrapolation._extends_linearly = True
-    assert_close(interpolator.evaluate(-1.0), -1.0)
 
 
 def test_non_finite_query_is_never_extrapolated() raises:

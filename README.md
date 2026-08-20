@@ -56,11 +56,13 @@ silently extending data beyond its domain. In-domain evaluation avoids
 intermediate overflow for finite endpoint data. Explicit linear extrapolation
 returns signed infinity when its represented result exceeds the finite
 `Float64` range. Because Mojo 1.0 permits external mutation of
-underscore-prefixed fields, every public table observation revalidates the
-stored lengths, finite values, and knot ordering before indexing. Intervals
-spanning nearly the full finite range produce finite, endpoint-bounded
-in-domain results, but sub-ULP central offsets are not promised exact affine
-recovery. See the
+underscore-prefixed fields, those fields are private by convention and direct
+mutation is outside the contract. Construction validates the stored lengths,
+finite values, and knot ordering; read-only methods trust that invariant, and
+`validate()` provides an explicit checkpoint after unusual direct access.
+Intervals spanning nearly the full finite range produce finite,
+endpoint-bounded in-domain results, but sub-ULP central offsets are not
+promised exact affine recovery. See the
 [v0.1 execution plan](docs/v0.1-plan.md) for the complete numerical contracts.
 
 ## Repository map

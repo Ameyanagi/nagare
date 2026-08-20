@@ -31,10 +31,10 @@ assert_compile_failure() {
 
 assert_compile_failure \
   tests/compile_fail/integer_extrapolation_policy.mojo \
-  "cannot be converted from 'IntLiteral[999]' to 'Optional[Bool]'"
+  "missing required argument: '_value'"
 assert_compile_failure \
   tests/compile_fail/validated_extrapolation_bypass.mojo \
-  "unexpected keyword argument '_validated'"
+  "missing required argument: '_value'"
 
 mojo build -I src examples/basic.mojo -o .pixi/test-bin/basic
 

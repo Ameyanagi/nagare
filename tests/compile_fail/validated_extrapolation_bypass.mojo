@@ -1,6 +1,7 @@
 from nagare import ExtrapolationPolicy
+from std.collections import Optional
 
 
 def main():
-    # This was the former invariant-breaking public constructor overload.
-    _ = ExtrapolationPolicy(999, _validated=True)
+    # The former Optional[Bool] representation is no longer a public API.
+    _ = ExtrapolationPolicy(Optional[Bool](None))

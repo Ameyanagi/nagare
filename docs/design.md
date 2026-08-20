@@ -21,14 +21,17 @@ contracts and sparse dependencies. Generated tables are acceptable when their
 sources, Unicode or data version, licenses, checksums, and deterministic update
 procedure are committed. Consumers must not need the generator toolchain.
 
-Mojo 1.0 exposes underscore-prefixed fields to callers, so ownership alone
-does not preserve a table invariant. Public observations revalidate stored
-knots and values before indexing. This favors defined failure after external
-mutation over an inaccurately advertised repeated-lookup cost.
+Construction establishes table invariants, and read-only methods trust them
+thereafter. Mojo 1.0 exposes underscore-prefixed fields to callers, but Nagare
+treats them as private by convention; direct mutation is outside the contract.
+`LinearInterpolator.validate()` provides one explicit validation checkpoint
+for callers performing unusual direct access without imposing an `O(n)` scan
+on metadata access or repeated evaluation.
 
-`ExtrapolationPolicy` uses the three total states of `Optional[Bool]`. Even if a
-caller mutates its exposed representation, every reachable state retains
-defined error, clamp, or linear semantics.
+`ExtrapolationPolicy` follows the standard-library nominal-enum pattern: a
+private-by-convention integer discriminant with `ERROR`, `CLAMP`, and `LINEAR`
+constants as its public construction surface. This keeps policy selection
+typed and makes equality one integer comparison.
 
 Scaled coordinate arithmetic keeps interpolation finite across most of the
 `Float64` range. On an interval spanning nearly `[-MAX_FINITE, +MAX_FINITE]`, a

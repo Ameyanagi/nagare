@@ -60,7 +60,7 @@ def _stable_linear_value(y0: Float64, y1: Float64, parameter: Float64) -> Float6
 
 
 def _validate_table(knots: List[Float64], values: List[Float64]) raises:
-    """Validate every invariant required before observing an interpolant."""
+    """Validate every invariant required by a linear interpolation table."""
     _validate_knots(knots)
     if len(values) != len(knots):
         raise Error("knot and value sequences must have equal length")
@@ -70,7 +70,13 @@ def _validate_table(knots: List[Float64], values: List[Float64]) raises:
 
 
 struct LinearInterpolator(Copyable):
-    """An owning piecewise-linear interpolant over finite `Float64` data."""
+    """An owning piecewise-linear interpolant over finite `Float64` data.
+
+    Construction validates the table, which read-only methods trust thereafter.
+    Underscore-prefixed fields are private by convention; mutating them directly
+    is outside the contract. Call `validate()` for an explicit checkpoint after
+    unusual direct access.
+    """
 
     var _knots: List[Float64]
     var _values: List[Float64]
@@ -89,19 +95,20 @@ struct LinearInterpolator(Copyable):
         self._values = values^
         self._extrapolation = extrapolation
 
-    def knot_count(self) raises -> Int:
-        """Validate the externally mutable table and return its knot count."""
+    def validate(self) raises:
+        """Explicitly revalidate the stored knot and value table."""
         _validate_table(self._knots, self._values)
+
+    def knot_count(self) -> Int:
+        """Return the knot count."""
         return len(self._knots)
 
-    def domain_start(self) raises -> Float64:
-        """Validate the externally mutable table and return its lower bound."""
-        _validate_table(self._knots, self._values)
+    def domain_start(self) -> Float64:
+        """Return the lower domain bound."""
         return self._knots[0]
 
-    def domain_end(self) raises -> Float64:
-        """Validate the externally mutable table and return its upper bound."""
-        _validate_table(self._knots, self._values)
+    def domain_end(self) -> Float64:
+        """Return the upper domain bound."""
         return self._knots[len(self._knots) - 1]
 
     def _evaluate_segment(self, index: Int, x: Float64) -> Float64:
@@ -125,7 +132,6 @@ struct LinearInterpolator(Copyable):
         `LINEAR` extrapolation returns signed infinity when its represented
         result exceeds the finite `Float64` range.
         """
-        _validate_table(self._knots, self._values)
         if not _is_finite(x):
             raise Error("query must be finite")
 

@@ -15,8 +15,9 @@ and uses semantic versioning after the first public release.
   premature overflow for finite in-domain data, preserve tiny-ordinate
   extrapolation when representable, and define signed-infinity extrapolation
   overflow.
-- Observation-time validation of externally mutable knot and value storage,
-  plus a bounded-result contract for ill-conditioned full-range intervals.
+- Construction-time validation with an explicit `validate()` checkpoint and
+  trusted read-only operations, plus a bounded-result contract for
+  ill-conditioned full-range intervals.
 - Exact, independently calculated reference, and property/invariant tests for
   the first numerical vertical slice.
 - An issue-sized v0.1 execution plan with numerical contracts and validation
