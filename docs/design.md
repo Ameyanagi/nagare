@@ -39,6 +39,21 @@ small central offset can be below one ULP after normalization. The contract in
 that ill-conditioned case is a finite result inside the endpoint hull, not
 exact affine recovery.
 
+## Natural cubic spline
+
+`CubicSplineInterpolator` solves the natural tridiagonal system once at
+construction with the Thomas algorithm. The endpoint second derivatives are
+fixed to zero, and each interval is stored in four contiguous coefficient
+buffers for a cubic in the shifted coordinate `dx = x - knots[i]`; queries do
+not rebuild or revalidate that representation.
+
+`ExtrapolationPolicy.LINEAR` always means a linear ray from an interpolant's
+endpoint value with its endpoint first derivative. It never means extending a
+boundary cubic. For a natural spline, the ray matches the value and first
+derivative by construction and its zero second derivative matches the natural
+boundary, so the join is C2-continuous. Under `CLAMP`, exterior derivatives are
+those of the clamped constant: both the first and second derivative are zero.
+
 ## Out of scope
 
 Plotting, dataframes, file I/O, optimization, general linear algebra, and signal-processing policy are outside this package.

@@ -8,7 +8,9 @@ Interpolation and spline algorithms for Mojo.
 
 Nagare is a focused numerical interpolation toolkit with explicit extrapolation and continuity contracts.
 
-The first implementation milestone is intentionally narrow: implement validated knot preparation, binary-search interval location, linear interpolation, and cubic splines with independently generated reference fixtures.
+The implemented scope is intentionally narrow: validated knot preparation,
+binary-search interval location, linear interpolation, and one-dimensional
+natural cubic splines with independently derived reference fixtures.
 The project is independently installable and does not require any application
 from the wider ecosystem.
 

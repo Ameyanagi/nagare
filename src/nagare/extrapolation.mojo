@@ -5,7 +5,9 @@ struct ExtrapolationPolicy(Copyable, Equatable, ImplicitlyCopyable):
     """Nominal policy for queries outside an interpolant's knot domain.
 
     `ERROR` rejects an out-of-domain query, `CLAMP` returns the nearest endpoint
-    value, and `LINEAR` extends the nearest endpoint segment.
+    value, and `LINEAR` follows the interpolant's endpoint tangent as a linear
+    ray. For a piecewise-linear interpolant, that ray extends the endpoint
+    segment.
 
     The constants are the public construction surface. The integer
     discriminant and its underscore-prefixed initializer argument are private
