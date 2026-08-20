@@ -14,6 +14,11 @@ install an application, renderer, language layer, or scientific stack.
 
 ## Layers
 
+The primary-library comparison and the dependency-ordered design for natural
+cubic, PCHIP, and Akima interpolation are recorded in
+[the reference architecture](reference-architecture.md). It is a research
+input; the v0.1 scope remains controlled by `docs/v0.1-plan.md`.
+
 Planned implementation areas: search, linear and polynomial interpolation, PCHIP, Akima, cubic and B-splines, smoothing splines, and extrapolation policy.
 
 The implemented foundation is layered as follows:
