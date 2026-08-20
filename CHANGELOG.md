@@ -24,3 +24,6 @@ and uses semantic versioning after the first public release.
 - A versioned 26-case linear construction/evaluation benchmark baseline with
   deterministic fixtures, host/compiler metadata, semantic checksums, and no
   comparative performance claim.
+- Benchmark manifest v2 locks workload sizes, iterations, and exact checksums;
+  run metadata identifies Git/lockfile state and fixed extreme cases use
+  per-evaluation optimizer barriers with non-zero semantic sentinels.

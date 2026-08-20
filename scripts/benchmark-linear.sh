@@ -19,8 +19,31 @@ case "$(uname -s)" in
     ;;
 esac
 
-printf '%s\n' 'metadata_schema=nagare-linear-benchmark-metadata-v1'
+if ! command -v git >/dev/null 2>&1; then
+  printf '%s\n' 'git is required to identify benchmark source state' >&2
+  exit 1
+fi
+benchmark_git_head=$(git rev-parse --verify HEAD)
+if [[ -n $(git status --porcelain --untracked-files=normal) ]]; then
+  benchmark_git_state=dirty
+else
+  benchmark_git_state=clean
+fi
+
+if command -v sha256sum >/dev/null 2>&1; then
+  benchmark_lock_sha256=$(sha256sum pixi.lock | awk '{print $1}')
+elif command -v shasum >/dev/null 2>&1; then
+  benchmark_lock_sha256=$(shasum -a 256 pixi.lock | awk '{print $1}')
+else
+  printf '%s\n' 'sha256sum or shasum is required for benchmark metadata' >&2
+  exit 1
+fi
+
+printf '%s\n' 'metadata_schema=nagare-linear-benchmark-metadata-v2'
 printf 'run_utc=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+printf 'git_head=%s\n' "$benchmark_git_head"
+printf 'git_state=%s\n' "$benchmark_git_state"
+printf 'pixi_lock_sha256=%s\n' "$benchmark_lock_sha256"
 printf 'cpu=%s\n' "$benchmark_cpu"
 printf 'os=%s\n' "$(uname -srv)"
 printf 'architecture=%s\n' "$(uname -m)"

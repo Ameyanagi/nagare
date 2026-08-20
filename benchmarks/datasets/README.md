@@ -16,10 +16,13 @@ Two two-knot extreme fixtures exercise numerical branches already guaranteed
 by the library contract:
 
 - `[0, 1e-308] -> [-1e-308, 1e-308]`, extrapolated at `x = 1`;
-- `[-MAX_FINITE, +MAX_FINITE] -> [-MAX_FINITE, +MAX_FINITE]`, evaluated at
-  `x = 1` under the documented sub-ULP central-offset limitation.
+- `[-MAX_FINITE, +MAX_FINITE] -> [-MAX_FINITE, +MAX_FINITE]`, whose reference
+  test retains `x = 1` for the documented sub-ULP central-offset limitation.
+  The benchmark uses `x = MAX_FINITE / 4096`, divides each evaluated value by
+  `MAX_FINITE`, and locks the 1,024-iteration checksum to `0.25`.
 
-The result checksum printed for each benchmark case is a deterministic semantic
-guard, not a cryptographic dataset checksum. Any future external or committed
-dataset must add its canonical source, license, retrieval date, SHA-256,
-generation command, and expected dimensions here.
+The exact result checksum printed for each benchmark case is a deterministic
+semantic guard and is locked in `benchmarks/linear_manifest.txt`; it is not a
+cryptographic dataset checksum. Any future external or committed dataset must
+add its canonical source, license, retrieval date, SHA-256, generation command,
+and expected dimensions here.

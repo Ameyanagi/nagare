@@ -18,19 +18,35 @@ comptime SAMPLE_COUNT = 7
 
 def _print_case(
     identity: String,
+    knot_count: Int,
+    iterations: Int,
+    expected_checksum: Float64,
     manifest_only: Bool,
-    iterations: Int = 0,
     best_elapsed_ns: Int = 0,
     checksum: Float64 = 0.0,
 ):
     if manifest_only:
-        print("case=", identity, sep="")
+        print(
+            "case=",
+            identity,
+            " knots=",
+            knot_count,
+            " iterations=",
+            iterations,
+            " checksum_contract=exact_float64 expected_checksum=",
+            expected_checksum,
+            sep="",
+        )
         return
     print(
         "case=",
         identity,
+        " knots=",
+        knot_count,
         " iterations=",
         iterations,
+        " checksum_contract=exact_float64 expected_checksum=",
+        expected_checksum,
         " best_elapsed_ns=",
         best_elapsed_ns,
         " statistic=min_of_",
@@ -48,7 +64,13 @@ def _measure_construction(
     manifest_only: Bool,
 ) raises:
     if manifest_only:
-        _print_case(identity, True)
+        _print_case(
+            identity,
+            len(fixture.knots),
+            iterations,
+            Float64(len(fixture.knots)),
+            True,
+        )
         return
 
     var last = LinearInterpolator(fixture.knots.copy(), fixture.values.copy())
@@ -68,8 +90,10 @@ def _measure_construction(
             best_elapsed_ns = elapsed_ns
     _print_case(
         identity,
-        False,
+        len(fixture.knots),
         iterations,
+        Float64(len(fixture.knots)),
+        False,
         best_elapsed_ns,
         Float64(last.knot_count()),
     )
@@ -98,15 +122,27 @@ def _measure_evaluation(
     use_out_of_domain_queries: Bool,
     manifest_only: Bool,
 ) raises:
-    if manifest_only:
-        _print_case(identity, True)
-        return
-
     var interpolator = LinearInterpolator(
         fixture.knots.copy(),
         fixture.values.copy(),
         extrapolation=policy,
     )
+    var expected_checksum = 0.0
+    for iteration in range(iterations):
+        var query = _out_of_domain_query(
+            fixture, iteration
+        ) if use_out_of_domain_queries else _in_domain_query(fixture, iteration)
+        expected_checksum += interpolator.evaluate(query)
+    if manifest_only:
+        _print_case(
+            identity,
+            len(fixture.knots),
+            iterations,
+            expected_checksum,
+            True,
+        )
+        return
+
     var checksum: Float64
     for _ in range(WARMUP_ROUNDS):
         checksum = 0.0
@@ -114,8 +150,13 @@ def _measure_evaluation(
             var query = _out_of_domain_query(
                 fixture, iteration
             ) if use_out_of_domain_queries else _in_domain_query(fixture, iteration)
-            checksum += interpolator.evaluate(query)
+            keep(query)
+            var value = interpolator.evaluate(query)
+            keep(value)
+            checksum += value
         keep(checksum)
+        if checksum != expected_checksum:
+            raise Error("evaluation checksum changed during warmup")
 
     var best_elapsed_ns = 0
     var best_checksum = 0.0
@@ -126,17 +167,24 @@ def _measure_evaluation(
             var query = _out_of_domain_query(
                 fixture, iteration
             ) if use_out_of_domain_queries else _in_domain_query(fixture, iteration)
-            checksum += interpolator.evaluate(query)
+            keep(query)
+            var value = interpolator.evaluate(query)
+            keep(value)
+            checksum += value
         var elapsed_ns = perf_counter_ns() - started
+        keep(checksum)
+        if checksum != expected_checksum:
+            raise Error("evaluation checksum changed during measurement")
         if sample == 0 or elapsed_ns < best_elapsed_ns:
             best_elapsed_ns = elapsed_ns
             best_checksum = checksum
-        keep(checksum)
 
     _print_case(
         identity,
-        False,
+        len(fixture.knots),
         iterations,
+        expected_checksum,
+        False,
         best_elapsed_ns,
         best_checksum,
     )
@@ -147,24 +195,39 @@ def _measure_fixed_query(
     fixture: LinearBenchmarkFixture,
     policy: ExtrapolationPolicy,
     query: Float64,
+    checksum_scale: Float64,
     iterations: Int,
     manifest_only: Bool,
 ) raises:
-    if manifest_only:
-        _print_case(identity, True)
-        return
-
     var interpolator = LinearInterpolator(
         fixture.knots.copy(),
         fixture.values.copy(),
         extrapolation=policy,
     )
+    var expected_checksum = 0.0
+    for _ in range(iterations):
+        expected_checksum += interpolator.evaluate(query) / checksum_scale
+    if manifest_only:
+        _print_case(
+            identity,
+            len(fixture.knots),
+            iterations,
+            expected_checksum,
+            True,
+        )
+        return
+
     var checksum: Float64
     for _ in range(WARMUP_ROUNDS):
         checksum = 0.0
         for _ in range(iterations):
-            checksum += interpolator.evaluate(query)
+            keep(query)
+            var value = interpolator.evaluate(query)
+            keep(value)
+            checksum += value / checksum_scale
         keep(checksum)
+        if checksum != expected_checksum:
+            raise Error("extreme checksum changed during warmup")
 
     var best_elapsed_ns = 0
     var best_checksum = 0.0
@@ -172,17 +235,24 @@ def _measure_fixed_query(
         checksum = 0.0
         var started = perf_counter_ns()
         for _ in range(iterations):
-            checksum += interpolator.evaluate(query)
+            keep(query)
+            var value = interpolator.evaluate(query)
+            keep(value)
+            checksum += value / checksum_scale
         var elapsed_ns = perf_counter_ns() - started
+        keep(checksum)
+        if checksum != expected_checksum:
+            raise Error("extreme checksum changed during measurement")
         if sample == 0 or elapsed_ns < best_elapsed_ns:
             best_elapsed_ns = elapsed_ns
             best_checksum = checksum
-        keep(checksum)
 
     _print_case(
         identity,
-        False,
+        len(fixture.knots),
         iterations,
+        expected_checksum,
+        False,
         best_elapsed_ns,
         best_checksum,
     )
@@ -237,7 +307,7 @@ def main() raises:
     if len(raw_args) > 1 and not manifest_only:
         raise Error("usage: bench_linear.mojo [--manifest]")
 
-    print("schema=nagare-linear-benchmark-v1")
+    print("schema=nagare-linear-benchmark-v2")
     print("warmup_rounds=", WARMUP_ROUNDS, sep="")
     print("samples=", SAMPLE_COUNT, sep="")
     print("statistic=minimum elapsed nanoseconds across samples")
@@ -250,6 +320,7 @@ def main() raises:
         make_tiny_ordinate_fixture(),
         ExtrapolationPolicy.LINEAR,
         1.0,
+        1.0,
         1_024,
         manifest_only,
     )
@@ -257,7 +328,8 @@ def main() raises:
         "evaluation.error.extreme.full_range",
         make_full_range_fixture(),
         ExtrapolationPolicy.ERROR,
-        1.0,
+        Float64.MAX_FINITE / 4_096.0,
+        Float64.MAX_FINITE,
         1_024,
         manifest_only,
     )
