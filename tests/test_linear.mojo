@@ -193,6 +193,121 @@ def test_non_finite_query_is_never_extrapolated() raises:
         _ = interpolator.evaluate(Float64("inf"))
 
 
+def test_batch_matches_scalar_for_clamp_and_linear_policies() raises:
+    # Fixed, random-ish coverage across both exterior regions, every exact
+    # knot, and each interpolation segment.
+    var queries: List[Float64] = [
+        -3.25,
+        -1.0,
+        -0.125,
+        0.0,
+        0.03125,
+        0.1,
+        0.25,
+        0.499,
+        0.5,
+        0.5001,
+        0.75,
+        1.125,
+        1.5,
+        1.999,
+        2.0,
+        2.001,
+        2.25,
+        2.75,
+        3.125,
+        3.5,
+        4.0,
+        4.5,
+        4.875,
+        4.999,
+        5.0,
+        5.001,
+        5.5,
+        6.75,
+        10.0,
+        31.0,
+    ]
+    var clamp = reference_interpolator(ExtrapolationPolicy.CLAMP)
+    var clamped = clamp.evaluate(queries)
+    assert_equal(len(clamped), len(queries))
+    for index in range(len(queries)):
+        assert_equal(clamped[index], clamp.evaluate(queries[index]))
+
+    var linear = reference_interpolator(ExtrapolationPolicy.LINEAR)
+    var extended = linear.evaluate(queries)
+    assert_equal(len(extended), len(queries))
+    for index in range(len(queries)):
+        assert_equal(extended[index], linear.evaluate(queries[index]))
+
+
+def test_batch_matches_scalar_for_error_policy_in_domain() raises:
+    var queries: List[Float64] = [
+        0.0,
+        0.03125,
+        0.1,
+        0.25,
+        0.499,
+        0.5,
+        0.5001,
+        0.75,
+        1.125,
+        1.5,
+        1.999,
+        2.0,
+        2.001,
+        2.25,
+        2.75,
+        3.125,
+        3.5,
+        4.0,
+        4.5,
+        4.875,
+        4.999,
+        5.0,
+    ]
+    var interpolator = reference_interpolator(ExtrapolationPolicy.ERROR)
+    var batch = interpolator.evaluate(queries)
+    assert_equal(len(batch), len(queries))
+    for index in range(len(queries)):
+        assert_equal(batch[index], interpolator.evaluate(queries[index]))
+
+
+def test_batch_error_policy_rejects_out_of_domain_query() raises:
+    var interpolator = reference_interpolator(ExtrapolationPolicy.ERROR)
+    var queries: List[Float64] = [0.0, 1.25, 5.001, 2.0]
+    with assert_raises(contains="outside the knot domain"):
+        _ = interpolator.evaluate(queries)
+
+
+def test_batch_rejects_non_finite_query_under_every_policy() raises:
+    var error = reference_interpolator(ExtrapolationPolicy.ERROR)
+    var clamp = reference_interpolator(ExtrapolationPolicy.CLAMP)
+    var linear = reference_interpolator(ExtrapolationPolicy.LINEAR)
+    var nan_queries: List[Float64] = [0.0, Float64("nan"), 5.0]
+    var infinity_queries: List[Float64] = [0.0, Float64("inf"), 5.0]
+
+    with assert_raises(contains="query must be finite"):
+        _ = error.evaluate(nan_queries)
+    with assert_raises(contains="query must be finite"):
+        _ = error.evaluate(infinity_queries)
+    with assert_raises(contains="query must be finite"):
+        _ = clamp.evaluate(nan_queries)
+    with assert_raises(contains="query must be finite"):
+        _ = clamp.evaluate(infinity_queries)
+    with assert_raises(contains="query must be finite"):
+        _ = linear.evaluate(nan_queries)
+    with assert_raises(contains="query must be finite"):
+        _ = linear.evaluate(infinity_queries)
+
+
+def test_empty_batch_returns_empty_list() raises:
+    var interpolator = reference_interpolator()
+    var queries = List[Float64]()
+    var batch = interpolator.evaluate(queries)
+    assert_equal(len(batch), 0)
+
+
 def test_affine_data_is_reproduced_across_irregular_intervals() raises:
     var interpolator = LinearInterpolator(
         [-4.0, -0.5, 0.0, 1.25, 8.0],

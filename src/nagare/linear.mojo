@@ -151,3 +151,15 @@ struct LinearInterpolator(Copyable):
             return self._evaluate_segment(final_index - 1, x)
 
         return self._evaluate_segment(_locate_interval_in_domain(self._knots, x), x)
+
+    def evaluate(self, queries: Span[Float64, _]) raises -> List[Float64]:
+        """Evaluate finite queries in order under the configured policy.
+
+        Raises on the first offending query (a non-finite query under every
+        policy, or an out-of-domain query under `ERROR`) and returns no partial
+        results. Empty input returns an empty list.
+        """
+        var results = List[Float64](capacity=len(queries))
+        for index in range(len(queries)):
+            results.append(self.evaluate(queries[index]))
+        return results^
