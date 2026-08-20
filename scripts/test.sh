@@ -37,6 +37,7 @@ assert_compile_failure \
   "missing required argument: '_value'"
 
 mojo build -I src examples/basic.mojo -o .pixi/test-bin/basic
+mojo build -I src examples/resample_sensor.mojo -o .pixi/test-bin/resample_sensor
 
 benchmark_manifest=$(
   mojo run --optimization-level 3 -I src -I benchmarks \
