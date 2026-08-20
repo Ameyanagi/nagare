@@ -34,8 +34,33 @@ The Mojo import is `nagare`. The eventual Conda distribution is
 `mojo-nagare`. Source lives under `src/nagare/`, whose
 `__init__.mojo` defines the package boundary.
 
-The current scaffold includes only an internal smoke marker. Nothing is
-re-exported as a stable public API yet.
+The first precise vertical slice is available: validated interval location and
+an owning one-dimensional linear interpolator with explicit error, clamp, and
+linear extrapolation policies.
+
+```mojo
+from nagare import ExtrapolationPolicy, LinearInterpolator, locate_interval
+
+var line = LinearInterpolator(
+    [0.0, 1.0, 3.0],
+    [2.0, 4.0, 8.0],
+    extrapolation=ExtrapolationPolicy.CLAMP,
+)
+print(line.evaluate(2.0))
+```
+
+Inputs must contain at least two finite, strictly increasing knots and an equal
+number of finite values. The default extrapolation policy raises instead of
+silently extending data beyond its domain. In-domain evaluation avoids
+intermediate overflow for finite endpoint data. Explicit linear extrapolation
+returns signed infinity when its represented result exceeds the finite
+`Float64` range. Because Mojo 1.0 permits external mutation of
+underscore-prefixed fields, every public table observation revalidates the
+stored lengths, finite values, and knot ordering before indexing. Intervals
+spanning nearly the full finite range produce finite, endpoint-bounded
+in-domain results, but sub-ULP central offsets are not promised exact affine
+recovery. See the
+[v0.1 execution plan](docs/v0.1-plan.md) for the complete numerical contracts.
 
 ## Repository map
 

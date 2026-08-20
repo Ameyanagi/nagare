@@ -1,0 +1,147 @@
+"""Validated one-dimensional piecewise-linear interpolation."""
+
+from std.collections import List
+
+from .extrapolation import ExtrapolationPolicy
+from .search import _is_finite, _locate_interval_in_domain, _validate_knots
+
+
+def _segment_parameter(x0: Float64, x1: Float64, x: Float64) -> Float64:
+    """Return `(x - x0) / (x1 - x0)` without avoidable overflow."""
+    var numerator = x - x0
+    var denominator = x1 - x0
+    if _is_finite(numerator) and _is_finite(denominator):
+        return numerator / denominator
+
+    # A difference of opposite-sign finite values can overflow even when its
+    # ratio is small. Scaling all coordinates by the same positive value keeps
+    # the ratio unchanged while bounding both differences by two.
+    var scale = max(abs(x), max(abs(x0), abs(x1)))
+    var scaled_denominator = x1 / scale - x0 / scale
+    if scaled_denominator != 0.0:
+        return (x / scale - x0 / scale) / scaled_denominator
+
+    # This case requires an extrapolated parameter beyond Float64 resolution:
+    # the finite knots became indistinguishable only after scaling by a much
+    # larger query. Dividing before subtracting produces the required signed
+    # infinity without an infinity-minus-infinity operation.
+    return x / denominator - x0 / denominator
+
+
+def _stable_linear_value(y0: Float64, y1: Float64, parameter: Float64) -> Float64:
+    """Evaluate an affine combination through the safest representable form."""
+    if y0 == y1:
+        return y0
+
+    # A directly representable ordinate delta is the most accurate path and is
+    # essential when a huge extrapolation parameter multiplies tiny ordinates.
+    # Accept it only if every intermediate and the result remain finite; a
+    # scaled fallback can recover cancellation cases that overflow this form.
+    var delta = y1 - y0
+    if _is_finite(delta):
+        var offset = parameter * delta
+        if _is_finite(offset):
+            var direct = y0 + offset
+            if _is_finite(direct):
+                return direct
+
+    var scale = max(abs(y0), abs(y1))
+    if scale == 0.0:
+        return 0.0
+
+    # Forming y1 - y0 can overflow for opposite-sign finite endpoints. Scaling
+    # first keeps the delta in [-2, 2]. The final multiplication overflows to a
+    # signed infinity exactly when the represented affine result exceeds the
+    # finite Float64 range.
+    var normalized_y0 = y0 / scale
+    var normalized_y1 = y1 / scale
+    var normalized = normalized_y0 + parameter * (normalized_y1 - normalized_y0)
+    return scale * normalized
+
+
+def _validate_table(knots: List[Float64], values: List[Float64]) raises:
+    """Validate every invariant required before observing an interpolant."""
+    _validate_knots(knots)
+    if len(values) != len(knots):
+        raise Error("knot and value sequences must have equal length")
+    for index in range(len(values)):
+        if not _is_finite(values[index]):
+            raise Error("interpolation values must be finite")
+
+
+struct LinearInterpolator(Copyable):
+    """An owning piecewise-linear interpolant over finite `Float64` data."""
+
+    var _knots: List[Float64]
+    var _values: List[Float64]
+    var _extrapolation: ExtrapolationPolicy
+
+    def __init__(
+        out self,
+        var knots: List[Float64],
+        var values: List[Float64],
+        extrapolation: ExtrapolationPolicy = ExtrapolationPolicy.ERROR,
+    ) raises:
+        """Validate and take ownership of a knot/value table."""
+        _validate_table(knots, values)
+
+        self._knots = knots^
+        self._values = values^
+        self._extrapolation = extrapolation
+
+    def knot_count(self) raises -> Int:
+        """Validate the externally mutable table and return its knot count."""
+        _validate_table(self._knots, self._values)
+        return len(self._knots)
+
+    def domain_start(self) raises -> Float64:
+        """Validate the externally mutable table and return its lower bound."""
+        _validate_table(self._knots, self._values)
+        return self._knots[0]
+
+    def domain_end(self) raises -> Float64:
+        """Validate the externally mutable table and return its upper bound."""
+        _validate_table(self._knots, self._values)
+        return self._knots[len(self._knots) - 1]
+
+    def _evaluate_segment(self, index: Int, x: Float64) -> Float64:
+        var x0 = self._knots[index]
+        var x1 = self._knots[index + 1]
+        var y0 = self._values[index]
+        var y1 = self._values[index + 1]
+
+        # Preserve every tabulated value exactly rather than allowing a
+        # multiply/add sequence to perturb it by one rounding step.
+        if x == x0:
+            return y0
+        if x == x1:
+            return y1
+        return _stable_linear_value(y0, y1, _segment_parameter(x0, x1, x))
+
+    def evaluate(self, x: Float64) raises -> Float64:
+        """Evaluate one finite query under the configured extrapolation policy.
+
+        In-domain results avoid intermediate overflow for finite endpoint data.
+        `LINEAR` extrapolation returns signed infinity when its represented
+        result exceeds the finite `Float64` range.
+        """
+        _validate_table(self._knots, self._values)
+        if not _is_finite(x):
+            raise Error("query must be finite")
+
+        if x < self._knots[0]:
+            if self._extrapolation == ExtrapolationPolicy.ERROR:
+                raise Error("query is outside the knot domain")
+            if self._extrapolation == ExtrapolationPolicy.CLAMP:
+                return self._values[0]
+            return self._evaluate_segment(0, x)
+
+        var final_index = len(self._knots) - 1
+        if x > self._knots[final_index]:
+            if self._extrapolation == ExtrapolationPolicy.ERROR:
+                raise Error("query is outside the knot domain")
+            if self._extrapolation == ExtrapolationPolicy.CLAMP:
+                return self._values[final_index]
+            return self._evaluate_segment(final_index - 1, x)
+
+        return self._evaluate_segment(_locate_interval_in_domain(self._knots, x), x)

@@ -2,10 +2,13 @@
 
 ## v0.1 — Foundation
 
-- implement validated knot preparation, binary-search interval location, linear interpolation, and cubic splines with independently generated reference fixtures.
+- Implement validated knot preparation, binary-search interval location, linear interpolation, and cubic splines with independently generated reference fixtures.
 - Define the smallest useful public API and its invariants.
 - Add unit, reference-value, and property/invariant coverage.
 - Build and test the precompiled package on supported targets.
+
+The issue-sized sequence, numerical contracts, validation gates, and explicit
+non-goals are maintained in [the v0.1 execution plan](v0.1-plan.md).
 
 ## v0.2 — Usability
 
