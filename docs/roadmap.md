@@ -18,7 +18,8 @@ non-goals are maintained in [the v0.1 execution plan](v0.1-plan.md).
 
 ## v0.3 — Performance
 
-- Add reproducible benchmarks and representative datasets.
+- Extend the checked-in linear baseline only when a representative new workload
+  exposes a decision the existing matrix cannot answer.
 - Optimize measured bottlenecks without weakening correctness or API clarity.
 - Add SIMD or specialized backends only behind the same semantic contract.
 

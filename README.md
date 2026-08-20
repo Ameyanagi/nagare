@@ -20,6 +20,7 @@ Install [Pixi](https://pixi.sh/), then run:
 pixi install --locked
 pixi run check
 pixi run example
+pixi run bench-linear
 ```
 
 The exact stable Mojo compiler and all development dependencies are captured in
@@ -67,7 +68,8 @@ recovery. See the
 - `src/nagare/`: library or application source
 - `tests/`: TestSuite unit, reference-value, and invariant tests
 - `examples/`: small compilable usage programs
-- `benchmarks/`: reproducible methodology and later benchmark programs
+- `benchmarks/`: versioned linear benchmark, deterministic fixtures, and
+  reproducible methodology
 - `docs/`: architecture, design, compatibility, roadmap, and release policy
 - `conda.recipe/`: local Rattler build recipe
 

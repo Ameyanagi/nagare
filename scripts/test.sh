@@ -2,7 +2,7 @@
 set -euo pipefail
 
 for test_file in tests/test_*.mojo; do
-  mojo run -I src "$test_file"
+  mojo run -I src -I benchmarks "$test_file"
 done
 
 mkdir -p .pixi/test-bin
@@ -37,3 +37,13 @@ assert_compile_failure \
   "unexpected keyword argument '_validated'"
 
 mojo build -I src examples/basic.mojo -o .pixi/test-bin/basic
+
+benchmark_manifest=$(
+  mojo run --optimization-level 3 -I src -I benchmarks \
+    benchmarks/bench_linear.mojo --manifest
+)
+if ! diff -u benchmarks/linear_manifest.txt \
+  <(printf '%s\n' "$benchmark_manifest"); then
+  printf '%s\n' 'Benchmark manifest changed; review its schema and methodology.' >&2
+  exit 1
+fi

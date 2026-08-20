@@ -50,3 +50,8 @@ lists. Every public numeric or table observation performs `O(n)` validation
 before any indexing, followed by `O(log n)` interval search when evaluation is
 needed. This explicit safety cost prevents stale construction-time invariants
 from becoming memory-unsafe indexing assumptions.
+
+Benchmark fixture generation and timing stay under `benchmarks/`; they are not
+root exports and are not installed as library modules. The benchmark calls only
+the documented root API, so it measures the same validation and arithmetic
+contract available to downstream consumers.

@@ -21,3 +21,6 @@ and uses semantic versioning after the first public release.
   the first numerical vertical slice.
 - An issue-sized v0.1 execution plan with numerical contracts and validation
   gates.
+- A versioned 26-case linear construction/evaluation benchmark baseline with
+  deterministic fixtures, host/compiler metadata, semantic checksums, and no
+  comparative performance claim.
