@@ -38,8 +38,9 @@ timing uses one constructed interpolator, but each public `evaluate` call
 intentionally includes the current `O(n)` table revalidation followed by
 interval search. Query generation and checksum accumulation are also inside the
 measured loop; they must remain unchanged when comparing two revisions. Every
-timed query and result crosses `std.benchmark.keep` inside the loop, preventing
-fixed extreme evaluations from being hoisted or collapsed.
+timed fixed query is passed through `std.benchmark.black_box` directly into
+`evaluate`, preventing the compiler from assuming or hoisting that input. Every
+timed result crosses `std.benchmark.keep` to prevent dead-code elimination.
 
 The runner performs two complete warmup rounds and seven measured samples. It
 reports the minimum total elapsed nanoseconds, not a derived throughput claim.

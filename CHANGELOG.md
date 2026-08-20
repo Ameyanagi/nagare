@@ -26,4 +26,5 @@ and uses semantic versioning after the first public release.
   comparative performance claim.
 - Benchmark manifest v2 locks workload sizes, iterations, and exact checksums;
   run metadata identifies Git/lockfile state and fixed extreme cases use
-  per-evaluation optimizer barriers with non-zero semantic sentinels.
+  per-iteration `black_box` inputs, retained outputs, and non-zero semantic
+  sentinels.

@@ -1,6 +1,6 @@
 """Reproducible construction and scalar-evaluation benchmark baseline."""
 
-from std.benchmark import keep
+from std.benchmark import black_box, keep
 from std.sys import argv
 from std.time import perf_counter_ns
 
@@ -221,8 +221,7 @@ def _measure_fixed_query(
     for _ in range(WARMUP_ROUNDS):
         checksum = 0.0
         for _ in range(iterations):
-            keep(query)
-            var value = interpolator.evaluate(query)
+            var value = interpolator.evaluate(black_box(query))
             keep(value)
             checksum += value / checksum_scale
         keep(checksum)
@@ -235,8 +234,7 @@ def _measure_fixed_query(
         checksum = 0.0
         var started = perf_counter_ns()
         for _ in range(iterations):
-            keep(query)
-            var value = interpolator.evaluate(query)
+            var value = interpolator.evaluate(black_box(query))
             keep(value)
             checksum += value / checksum_scale
         var elapsed_ns = perf_counter_ns() - started
