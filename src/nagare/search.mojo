@@ -13,12 +13,30 @@ def _validate_knots(knots: List[Float64]) raises:
     if len(knots) < 2:
         raise Error("knot sequence must contain at least two values")
     if not _is_finite(knots[0]):
-        raise Error("knots must be finite")
+        raise Error(String("knots must be finite: knots[0] is ", knots[0]))
     for index in range(1, len(knots)):
         if not _is_finite(knots[index]):
-            raise Error("knots must be finite")
+            raise Error(
+                String(
+                    "knots must be finite: knots[",
+                    index,
+                    "] is ",
+                    knots[index],
+                )
+            )
         if knots[index] <= knots[index - 1]:
-            raise Error("knots must be strictly increasing")
+            raise Error(
+                String(
+                    "knots must be strictly increasing: knots[",
+                    index,
+                    "] = ",
+                    knots[index],
+                    " <= knots[",
+                    index - 1,
+                    "] = ",
+                    knots[index - 1],
+                )
+            )
 
 
 def _locate_interval_in_domain(knots: List[Float64], x: Float64) -> Int:
@@ -51,5 +69,15 @@ def locate_interval(knots: List[Float64], x: Float64) raises -> Int:
     if not _is_finite(x):
         raise Error("query must be finite")
     if x < knots[0] or x > knots[len(knots) - 1]:
-        raise Error("query is outside the knot domain")
+        raise Error(
+            String(
+                "query ",
+                x,
+                " is outside the knot domain [",
+                knots[0],
+                ", ",
+                knots[len(knots) - 1],
+                "]",
+            )
+        )
     return _locate_interval_in_domain(knots, x)

@@ -2,7 +2,7 @@
 
 from std.collections import List
 
-from .extrapolation import ExtrapolationPolicy
+from .extrapolation import ExtrapolationPolicy, _domain_error_message
 from .linear import _validate_table
 from .search import _is_finite, _locate_interval_in_domain
 
@@ -96,6 +96,8 @@ struct CubicSplineInterpolator(Copyable):
     Outside the domain, `LINEAR` follows the endpoint tangent ray rather than
     extending a boundary cubic. Because a natural spline has zero endpoint
     second derivative, that ray is C2-continuous with the spline at the join.
+    `FILL` returns its payload for values and both derivative orders outside the
+    domain.
     """
 
     var _knots: List[Float64]
@@ -214,16 +216,23 @@ struct CubicSplineInterpolator(Copyable):
         """Evaluate one finite query under the configured policy.
 
         Exact knot queries return the stored ordinate. `LINEAR` extrapolation
-        uses the appropriate endpoint tangent ray.
+        uses the appropriate endpoint tangent ray, while `FILL` returns its
+        payload outside the domain.
         """
         if not _is_finite(x):
             raise Error("query must be finite")
 
         if x < self._knots[0]:
             if self._extrapolation == ExtrapolationPolicy.ERROR:
-                raise Error("query is outside the knot domain")
+                raise Error(
+                    _domain_error_message(
+                        x, self._knots[0], self._knots[len(self._knots) - 1]
+                    )
+                )
             if self._extrapolation == ExtrapolationPolicy.CLAMP:
                 return self._values[0]
+            if self._extrapolation.is_fill():
+                return self._extrapolation.fill_value()
             return self._evaluate_linear_ray(
                 self._knots[0], self._values[0], self._left_slope(), x
             )
@@ -231,9 +240,13 @@ struct CubicSplineInterpolator(Copyable):
         var final_knot = len(self._knots) - 1
         if x > self._knots[final_knot]:
             if self._extrapolation == ExtrapolationPolicy.ERROR:
-                raise Error("query is outside the knot domain")
+                raise Error(
+                    _domain_error_message(x, self._knots[0], self._knots[final_knot])
+                )
             if self._extrapolation == ExtrapolationPolicy.CLAMP:
                 return self._values[final_knot]
+            if self._extrapolation.is_fill():
+                return self._extrapolation.fill_value()
             return self._evaluate_linear_ray(
                 self._knots[final_knot],
                 self._values[final_knot],
@@ -248,24 +261,35 @@ struct CubicSplineInterpolator(Copyable):
 
         Outside the domain, `CLAMP` differentiates the clamped constant and
         returns zero. `LINEAR` returns the constant endpoint-ray slope, while
-        `ERROR` rejects the query. Non-finite queries always raise.
+        `FILL` returns its payload and `ERROR` rejects the query. Non-finite
+        queries always raise.
         """
         if not _is_finite(x):
             raise Error("query must be finite")
 
         if x < self._knots[0]:
             if self._extrapolation == ExtrapolationPolicy.ERROR:
-                raise Error("query is outside the knot domain")
+                raise Error(
+                    _domain_error_message(
+                        x, self._knots[0], self._knots[len(self._knots) - 1]
+                    )
+                )
             if self._extrapolation == ExtrapolationPolicy.CLAMP:
                 return 0.0
+            if self._extrapolation.is_fill():
+                return self._extrapolation.fill_value()
             return self._left_slope()
 
         var final_knot = len(self._knots) - 1
         if x > self._knots[final_knot]:
             if self._extrapolation == ExtrapolationPolicy.ERROR:
-                raise Error("query is outside the knot domain")
+                raise Error(
+                    _domain_error_message(x, self._knots[0], self._knots[final_knot])
+                )
             if self._extrapolation == ExtrapolationPolicy.CLAMP:
                 return 0.0
+            if self._extrapolation.is_fill():
+                return self._extrapolation.fill_value()
             return self._right_slope()
 
         return self._derivative_segment(_locate_interval_in_domain(self._knots, x), x)
@@ -274,21 +298,31 @@ struct CubicSplineInterpolator(Copyable):
         """Evaluate the second derivative under the configured policy.
 
         Both `CLAMP` and `LINEAR` are constant/linear outside the domain and
-        therefore return zero there. `ERROR` rejects exterior queries, and
-        non-finite queries always raise.
+        therefore return zero there. `FILL` returns its payload, `ERROR` rejects
+        exterior queries, and non-finite queries always raise.
         """
         if not _is_finite(x):
             raise Error("query must be finite")
 
         if x < self._knots[0]:
             if self._extrapolation == ExtrapolationPolicy.ERROR:
-                raise Error("query is outside the knot domain")
+                raise Error(
+                    _domain_error_message(
+                        x, self._knots[0], self._knots[len(self._knots) - 1]
+                    )
+                )
+            if self._extrapolation.is_fill():
+                return self._extrapolation.fill_value()
             return 0.0
 
         var final_knot = len(self._knots) - 1
         if x > self._knots[final_knot]:
             if self._extrapolation == ExtrapolationPolicy.ERROR:
-                raise Error("query is outside the knot domain")
+                raise Error(
+                    _domain_error_message(x, self._knots[0], self._knots[final_knot])
+                )
+            if self._extrapolation.is_fill():
+                return self._extrapolation.fill_value()
             return 0.0
 
         if x == self._knots[0] or x == self._knots[final_knot]:
@@ -298,13 +332,35 @@ struct CubicSplineInterpolator(Copyable):
         )
 
     def evaluate(self, queries: Span[Float64, _]) raises -> List[Float64]:
-        """Evaluate finite queries in order under the configured policy.
+        """Allocate and return results for finite queries in order.
 
         Raises on the first offending query (a non-finite query under every
         policy, or an out-of-domain query under `ERROR`) and returns no partial
         results. Empty input returns an empty list.
         """
-        var results = List[Float64](capacity=len(queries))
-        for index in range(len(queries)):
-            results.append(self.evaluate(queries[index]))
+        var results = List[Float64](length=len(queries), fill=0.0)
+        self.evaluate_into(queries, results)
         return results^
+
+    def evaluate_into(
+        self,
+        queries: Span[Float64, _],
+        results: Span[mut=True, Float64, _],
+    ) raises:
+        """Evaluate `queries[i]` into `results[i]` without allocating.
+
+        Raises if the buffer lengths differ or on the first offending query;
+        results contents are unspecified after a raise.
+        """
+        if len(queries) != len(results):
+            raise Error(
+                String(
+                    "query and result buffers must have equal length: ",
+                    "len(queries) = ",
+                    len(queries),
+                    ", len(results) = ",
+                    len(results),
+                )
+            )
+        for index in range(len(queries)):
+            results[index] = self.evaluate(queries[index])

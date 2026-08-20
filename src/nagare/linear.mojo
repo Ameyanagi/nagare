@@ -2,7 +2,7 @@
 
 from std.collections import List
 
-from .extrapolation import ExtrapolationPolicy
+from .extrapolation import ExtrapolationPolicy, _domain_error_message
 from .search import _is_finite, _locate_interval_in_domain, _validate_knots
 
 
@@ -63,10 +63,24 @@ def _validate_table(knots: List[Float64], values: List[Float64]) raises:
     """Validate every invariant required by a linear interpolation table."""
     _validate_knots(knots)
     if len(values) != len(knots):
-        raise Error("knot and value sequences must have equal length")
+        raise Error(
+            String(
+                "knot and value sequences must have equal length: len(knots) = ",
+                len(knots),
+                ", len(values) = ",
+                len(values),
+            )
+        )
     for index in range(len(values)):
         if not _is_finite(values[index]):
-            raise Error("interpolation values must be finite")
+            raise Error(
+                String(
+                    "interpolation values must be finite: values[",
+                    index,
+                    "] is ",
+                    values[index],
+                )
+            )
 
 
 struct LinearInterpolator(Copyable):
@@ -130,36 +144,69 @@ struct LinearInterpolator(Copyable):
 
         In-domain results avoid intermediate overflow for finite endpoint data.
         `LINEAR` extrapolation returns signed infinity when its represented
-        result exceeds the finite `Float64` range.
+        result exceeds the finite `Float64` range. `FILL` returns its payload
+        outside the knot domain.
         """
         if not _is_finite(x):
             raise Error("query must be finite")
 
         if x < self._knots[0]:
             if self._extrapolation == ExtrapolationPolicy.ERROR:
-                raise Error("query is outside the knot domain")
+                raise Error(
+                    _domain_error_message(
+                        x, self._knots[0], self._knots[len(self._knots) - 1]
+                    )
+                )
             if self._extrapolation == ExtrapolationPolicy.CLAMP:
                 return self._values[0]
+            if self._extrapolation.is_fill():
+                return self._extrapolation.fill_value()
             return self._evaluate_segment(0, x)
 
         var final_index = len(self._knots) - 1
         if x > self._knots[final_index]:
             if self._extrapolation == ExtrapolationPolicy.ERROR:
-                raise Error("query is outside the knot domain")
+                raise Error(
+                    _domain_error_message(x, self._knots[0], self._knots[final_index])
+                )
             if self._extrapolation == ExtrapolationPolicy.CLAMP:
                 return self._values[final_index]
+            if self._extrapolation.is_fill():
+                return self._extrapolation.fill_value()
             return self._evaluate_segment(final_index - 1, x)
 
         return self._evaluate_segment(_locate_interval_in_domain(self._knots, x), x)
 
     def evaluate(self, queries: Span[Float64, _]) raises -> List[Float64]:
-        """Evaluate finite queries in order under the configured policy.
+        """Allocate and return results for finite queries in order.
 
         Raises on the first offending query (a non-finite query under every
         policy, or an out-of-domain query under `ERROR`) and returns no partial
         results. Empty input returns an empty list.
         """
-        var results = List[Float64](capacity=len(queries))
-        for index in range(len(queries)):
-            results.append(self.evaluate(queries[index]))
+        var results = List[Float64](length=len(queries), fill=0.0)
+        self.evaluate_into(queries, results)
         return results^
+
+    def evaluate_into(
+        self,
+        queries: Span[Float64, _],
+        results: Span[mut=True, Float64, _],
+    ) raises:
+        """Evaluate `queries[i]` into `results[i]` without allocating.
+
+        Raises if the buffer lengths differ or on the first offending query;
+        results contents are unspecified after a raise.
+        """
+        if len(queries) != len(results):
+            raise Error(
+                String(
+                    "query and result buffers must have equal length: ",
+                    "len(queries) = ",
+                    len(queries),
+                    ", len(results) = ",
+                    len(results),
+                )
+            )
+        for index in range(len(queries)):
+            results[index] = self.evaluate(queries[index])

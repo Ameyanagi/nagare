@@ -157,6 +157,43 @@ def test_linear_policy_uses_endpoint_tangent_rays() raises:
     assert_equal(interpolator.second_derivative(4.0), 0.0)
 
 
+def test_fill_policy_applies_to_values_and_derivatives_outside_domain() raises:
+    var default_fill = hand_fixture(ExtrapolationPolicy.FILL)
+    assert_true(default_fill.evaluate(-1.0) != default_fill.evaluate(-1.0))
+    assert_true(default_fill.evaluate(4.0) != default_fill.evaluate(4.0))
+    assert_true(default_fill.derivative(-1.0) != default_fill.derivative(-1.0))
+    assert_true(default_fill.derivative(4.0) != default_fill.derivative(4.0))
+    assert_true(
+        default_fill.second_derivative(-1.0) != default_fill.second_derivative(-1.0)
+    )
+    assert_true(
+        default_fill.second_derivative(4.0) != default_fill.second_derivative(4.0)
+    )
+
+    var custom_fill = hand_fixture(ExtrapolationPolicy.fill(-1.5))
+    assert_equal(custom_fill.evaluate(-1.0), -1.5)
+    assert_equal(custom_fill.evaluate(4.0), -1.5)
+    assert_equal(custom_fill.derivative(-1.0), -1.5)
+    assert_equal(custom_fill.derivative(4.0), -1.5)
+    assert_equal(custom_fill.second_derivative(-1.0), -1.5)
+    assert_equal(custom_fill.second_derivative(4.0), -1.5)
+
+    var reference = hand_fixture()
+    assert_equal(custom_fill.evaluate(1.5), reference.evaluate(1.5))
+    assert_equal(custom_fill.derivative(1.5), reference.derivative(1.5))
+    assert_equal(
+        custom_fill.second_derivative(1.5),
+        reference.second_derivative(1.5),
+    )
+
+    with assert_raises(contains="query must be finite"):
+        _ = custom_fill.evaluate(Float64("nan"))
+    with assert_raises(contains="query must be finite"):
+        _ = custom_fill.derivative(Float64("inf"))
+    with assert_raises(contains="query must be finite"):
+        _ = custom_fill.second_derivative(Float64("-inf"))
+
+
 def test_non_finite_query_is_rejected_under_every_policy() raises:
     var error = hand_fixture(ExtrapolationPolicy.ERROR)
     var clamp = hand_fixture(ExtrapolationPolicy.CLAMP)
@@ -239,6 +276,22 @@ def test_batch_matches_scalar_and_handles_errors_and_empty_input() raises:
     var empty = List[Float64]()
     var empty_results = error.evaluate(empty)
     assert_equal(len(empty_results), 0)
+
+
+def test_evaluate_into_matches_allocating_wrapper() raises:
+    var queries: List[Float64] = [-1.0, 0.0, 0.5, 2.0, 3.0, 4.0]
+    var interpolator = hand_fixture(ExtrapolationPolicy.fill(-1.5))
+    var results = List[Float64](length=len(queries), fill=99.0)
+    interpolator.evaluate_into(queries, results)
+
+    var allocated = interpolator.evaluate(queries)
+    assert_equal(len(results), len(allocated))
+    for index in range(len(results)):
+        assert_equal(results[index], allocated[index])
+
+    var short_results = List[Float64](length=1, fill=0.0)
+    with assert_raises(contains="len(queries) = 6, len(results) = 1"):
+        interpolator.evaluate_into(queries, short_results)
 
 
 def test_two_knot_spline_degenerates_to_a_straight_segment() raises:

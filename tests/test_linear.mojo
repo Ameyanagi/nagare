@@ -87,9 +87,9 @@ def test_large_opposite_sign_knots_and_values_remain_finite_in_domain() raises:
 
 def test_default_policy_rejects_extrapolation() raises:
     var interpolator = reference_interpolator()
-    with assert_raises(contains="outside the knot domain"):
+    with assert_raises(contains="pass extrapolation= to allow this"):
         _ = interpolator.evaluate(-0.1)
-    with assert_raises(contains="outside the knot domain"):
+    with assert_raises(contains="query 5.1 is outside the knot domain [0.0, 5.0]"):
         _ = interpolator.evaluate(5.1)
 
 
@@ -103,6 +103,21 @@ def test_linear_policy_extends_endpoint_segments() raises:
     var interpolator = reference_interpolator(ExtrapolationPolicy.LINEAR)
     assert_close(interpolator.evaluate(-1.0), -1.0)
     assert_close(interpolator.evaluate(6.0), 11.0)
+
+
+def test_fill_policy_returns_default_nan_or_custom_payload() raises:
+    var default_fill = reference_interpolator(ExtrapolationPolicy.FILL)
+    assert_true(default_fill.evaluate(-1.0) != default_fill.evaluate(-1.0))
+    assert_true(default_fill.evaluate(6.0) != default_fill.evaluate(6.0))
+    assert_equal(default_fill.evaluate(0.5), 2.0)
+
+    var custom_fill = reference_interpolator(ExtrapolationPolicy.fill(-1.5))
+    assert_equal(custom_fill.evaluate(-1.0), -1.5)
+    assert_equal(custom_fill.evaluate(6.0), -1.5)
+    assert_equal(custom_fill.evaluate(0.5), 2.0)
+
+    with assert_raises(contains="query must be finite"):
+        _ = custom_fill.evaluate(Float64("nan"))
 
 
 def test_large_finite_extrapolation_avoids_premature_overflow() raises:
@@ -141,11 +156,11 @@ def test_extrapolated_result_uses_signed_infinity_on_overflow() raises:
 
 
 def test_constructor_rejects_invalid_tables() raises:
-    with assert_raises(contains="equal length"):
+    with assert_raises(contains="len(knots) = 2, len(values) = 1"):
         _ = LinearInterpolator([0.0, 1.0], [2.0])
-    with assert_raises(contains="strictly increasing"):
+    with assert_raises(contains="knots[1] = 0.0 <= knots[0] = 0.0"):
         _ = LinearInterpolator([0.0, 0.0], [1.0, 2.0])
-    with assert_raises(contains="values must be finite"):
+    with assert_raises(contains="values[1] is nan"):
         _ = LinearInterpolator([0.0, 1.0], [1.0, Float64("nan")])
 
 
@@ -183,6 +198,12 @@ def test_policy_constants_are_distinct() raises:
     assert_true(ExtrapolationPolicy.ERROR != ExtrapolationPolicy.CLAMP)
     assert_true(ExtrapolationPolicy.ERROR != ExtrapolationPolicy.LINEAR)
     assert_true(ExtrapolationPolicy.CLAMP != ExtrapolationPolicy.LINEAR)
+    assert_true(ExtrapolationPolicy.FILL != ExtrapolationPolicy.CLAMP)
+    assert_true(ExtrapolationPolicy.FILL == ExtrapolationPolicy.FILL)
+    assert_true(ExtrapolationPolicy.fill(2.0) == ExtrapolationPolicy.fill(2.0))
+    assert_true(ExtrapolationPolicy.fill(2.0) != ExtrapolationPolicy.fill(3.0))
+    assert_true(ExtrapolationPolicy.fill(-1.5) != ExtrapolationPolicy.FILL)
+    assert_true(ExtrapolationPolicy.fill(Float64("nan")) == ExtrapolationPolicy.FILL)
 
 
 def test_non_finite_query_is_never_extrapolated() raises:
@@ -271,6 +292,22 @@ def test_batch_matches_scalar_for_error_policy_in_domain() raises:
     assert_equal(len(batch), len(queries))
     for index in range(len(queries)):
         assert_equal(batch[index], interpolator.evaluate(queries[index]))
+
+
+def test_evaluate_into_matches_allocating_wrapper() raises:
+    var queries: List[Float64] = [-1.0, 0.0, 0.25, 2.0, 5.0, 6.0]
+    var interpolator = reference_interpolator(ExtrapolationPolicy.fill(-1.5))
+    var results = List[Float64](length=len(queries), fill=99.0)
+    interpolator.evaluate_into(queries, results)
+
+    var allocated = interpolator.evaluate(queries)
+    assert_equal(len(results), len(allocated))
+    for index in range(len(results)):
+        assert_equal(results[index], allocated[index])
+
+    var short_results = List[Float64](length=2, fill=0.0)
+    with assert_raises(contains="len(queries) = 6, len(results) = 2"):
+        interpolator.evaluate_into(queries, short_results)
 
 
 def test_batch_error_policy_rejects_out_of_domain_query() raises:
