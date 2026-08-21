@@ -1,0 +1,30 @@
+schema=nagare-linear-benchmark-v2
+warmup_rounds=2
+samples=7
+statistic=minimum elapsed nanoseconds across samples
+case=construction.small.uniform knots=8 iterations=2000 checksum_contract=exact_float64 expected_checksum=8.0
+case=evaluation.error.small.uniform knots=8 iterations=10000 checksum_contract=exact_float64 expected_checksum=-12261.28125
+case=evaluation.clamp.small.uniform knots=8 iterations=10000 checksum_contract=exact_float64 expected_checksum=-11875.0
+case=evaluation.linear.small.uniform knots=8 iterations=10000 checksum_contract=exact_float64 expected_checksum=-11875.0
+case=construction.small.irregular knots=8 iterations=2000 checksum_contract=exact_float64 expected_checksum=8.0
+case=evaluation.error.small.irregular knots=8 iterations=10000 checksum_contract=exact_float64 expected_checksum=1932.984375
+case=evaluation.clamp.small.irregular knots=8 iterations=10000 checksum_contract=exact_float64 expected_checksum=3125.0
+case=evaluation.linear.small.irregular knots=8 iterations=10000 checksum_contract=exact_float64 expected_checksum=4062.5
+case=construction.medium.uniform knots=1024 iterations=64 checksum_contract=exact_float64 expected_checksum=1024.0
+case=evaluation.error.medium.uniform knots=1024 iterations=128 checksum_contract=exact_float64 expected_checksum=8557.9375
+case=evaluation.clamp.medium.uniform knots=1024 iterations=128 checksum_contract=exact_float64 expected_checksum=72984.0
+case=evaluation.linear.medium.uniform knots=1024 iterations=128 checksum_contract=exact_float64 expected_checksum=72960.0
+case=construction.medium.irregular knots=1024 iterations=64 checksum_contract=exact_float64 expected_checksum=1024.0
+case=evaluation.error.medium.irregular knots=1024 iterations=128 checksum_contract=exact_float64 expected_checksum=11647.8203125
+case=evaluation.clamp.medium.irregular knots=1024 iterations=128 checksum_contract=exact_float64 expected_checksum=97548.0
+case=evaluation.linear.medium.irregular knots=1024 iterations=128 checksum_contract=exact_float64 expected_checksum=97518.0
+case=construction.large.uniform knots=65536 iterations=2 checksum_contract=exact_float64 expected_checksum=65536.0
+case=evaluation.error.large.uniform knots=65536 iterations=4 checksum_contract=exact_float64 expected_checksum=-11.71875
+case=evaluation.clamp.large.uniform knots=65536 iterations=4 checksum_contract=exact_float64 expected_checksum=147432.75
+case=evaluation.linear.large.uniform knots=65536 iterations=4 checksum_contract=exact_float64 expected_checksum=147432.0
+case=construction.large.irregular knots=65536 iterations=2 checksum_contract=exact_float64 expected_checksum=65536.0
+case=evaluation.error.large.irregular knots=65536 iterations=4 checksum_contract=exact_float64 expected_checksum=-8.203125
+case=evaluation.clamp.large.irregular knots=65536 iterations=4 checksum_contract=exact_float64 expected_checksum=196584.0
+case=evaluation.linear.large.irregular knots=65536 iterations=4 checksum_contract=exact_float64 expected_checksum=196582.875
+case=evaluation.linear.extreme.tiny_ordinates knots=2 iterations=1024 checksum_contract=exact_float64 expected_checksum=2047.9999999999998
+case=evaluation.error.extreme.full_range knots=2 iterations=1024 checksum_contract=exact_float64 expected_checksum=0.25
