@@ -188,7 +188,7 @@ struct LinearInterpolator(Copyable, Equatable, Writable):
         outside the knot domain.
         """
         if not _is_finite(x):
-            raise Error("query must be finite")
+            raise Error(String("query must be finite: received ", x))
 
         if x < self._knots[0]:
             if self._extrapolation == ExtrapolationPolicy.ERROR:
@@ -226,7 +226,7 @@ struct LinearInterpolator(Copyable, Equatable, Writable):
         slope, `FILL` returns its payload, and `ERROR` rejects the query.
         """
         if not _is_finite(x):
-            raise Error("query must be finite")
+            raise Error(String("query must be finite: received ", x))
 
         if x < self._knots[0]:
             if self._extrapolation == ExtrapolationPolicy.ERROR:

@@ -24,9 +24,9 @@ def test_locate_interval_covers_every_interval() raises:
 
 
 def test_locate_interval_rejects_invalid_knots() raises:
-    with assert_raises(contains="at least two"):
+    with assert_raises(contains="at least two values: received 0"):
         _ = locate_interval(List[Float64](), 0.0)
-    with assert_raises(contains="at least two"):
+    with assert_raises(contains="at least two values: received 1"):
         _ = locate_interval([0.0], 0.0)
     with assert_raises(contains="knots[2] = 1.0 <= knots[1] = 1.0"):
         _ = locate_interval([0.0, 1.0, 1.0], 0.5)
@@ -44,9 +44,9 @@ def test_locate_interval_rejects_invalid_queries() raises:
         _ = locate_interval(knots, -0.01)
     with assert_raises(contains="outside the knot domain"):
         _ = locate_interval(knots, 2.01)
-    with assert_raises(contains="query must be finite"):
+    with assert_raises(contains="query must be finite: received nan"):
         _ = locate_interval(knots, Float64("nan"))
-    with assert_raises(contains="query must be finite"):
+    with assert_raises(contains="query must be finite: received inf"):
         _ = locate_interval(knots, Float64("inf"))
 
 

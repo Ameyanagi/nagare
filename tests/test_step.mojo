@@ -87,7 +87,7 @@ def test_error_clamp_and_fill_extrapolation_policies() raises:
     assert_equal(custom_fill.evaluate(5.0), -1.5)
     assert_equal(custom_fill.evaluate(1.0), 20.0)
 
-    with assert_raises(contains="query must be finite"):
+    with assert_raises(contains="query must be finite: received nan"):
         _ = custom_fill.evaluate(Float64("nan"))
 
 

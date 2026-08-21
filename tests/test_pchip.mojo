@@ -187,7 +187,7 @@ def test_error_clamp_linear_and_fill_extrapolation() raises:
 
 def test_non_finite_queries_always_raise() raises:
     var interpolator = reference_interpolator(ExtrapolationPolicy.FILL)
-    with assert_raises(contains="query must be finite"):
+    with assert_raises(contains="query must be finite: received nan"):
         _ = interpolator.evaluate(Float64("nan"))
     with assert_raises(contains="query must be finite"):
         _ = interpolator.derivative(Float64("-inf"))

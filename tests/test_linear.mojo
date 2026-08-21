@@ -116,7 +116,7 @@ def test_fill_policy_returns_default_nan_or_custom_payload() raises:
     assert_equal(custom_fill.evaluate(6.0), -1.5)
     assert_equal(custom_fill.evaluate(0.5), 2.0)
 
-    with assert_raises(contains="query must be finite"):
+    with assert_raises(contains="query must be finite: received nan"):
         _ = custom_fill.evaluate(Float64("nan"))
 
 

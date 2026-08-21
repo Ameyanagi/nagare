@@ -147,7 +147,10 @@ def _validate_boundary_table(values: List[Float64], boundary: BoundaryCondition)
         boundary != BoundaryCondition.NOT_A_KNOT
         and boundary != BoundaryCondition.NATURAL
     ):
-        raise Error("boundary condition is invalid")
+        raise Error(
+            "boundary condition is invalid; use NOT_A_KNOT, NATURAL, PERIODIC, "
+            "or clamped(start, end)"
+        )
 
 
 def _solve_tridiagonal(
@@ -435,16 +438,61 @@ def _validate_coefficient_buffers(
         or len(c) != interval_count
         or len(d) != interval_count
     ):
-        raise Error("spline coefficient buffers must match interval count")
+        raise Error(
+            String(
+                "spline coefficient buffers must match interval count: expected ",
+                interval_count,
+                ", len(a) = ",
+                len(a),
+                ", len(b) = ",
+                len(b),
+                ", len(c) = ",
+                len(c),
+                ", len(d) = ",
+                len(d),
+            )
+        )
 
     for index in range(interval_count):
-        if (
-            not _is_finite(a[index])
-            or not _is_finite(b[index])
-            or not _is_finite(c[index])
-            or not _is_finite(d[index])
-        ):
-            raise Error("spline coefficients must be finite")
+        if not _is_finite(a[index]):
+            raise Error(
+                String(
+                    "spline coefficients must be finite: a[",
+                    index,
+                    "] is ",
+                    a[index],
+                )
+            )
+    for index in range(interval_count):
+        if not _is_finite(b[index]):
+            raise Error(
+                String(
+                    "spline coefficients must be finite: b[",
+                    index,
+                    "] is ",
+                    b[index],
+                )
+            )
+    for index in range(interval_count):
+        if not _is_finite(c[index]):
+            raise Error(
+                String(
+                    "spline coefficients must be finite: c[",
+                    index,
+                    "] is ",
+                    c[index],
+                )
+            )
+    for index in range(interval_count):
+        if not _is_finite(d[index]):
+            raise Error(
+                String(
+                    "spline coefficients must be finite: d[",
+                    index,
+                    "] is ",
+                    d[index],
+                )
+            )
 
 
 struct CubicSplineInterpolator(Copyable, Equatable, Writable):
@@ -620,7 +668,7 @@ struct CubicSplineInterpolator(Copyable, Equatable, Writable):
         payload outside the domain.
         """
         if not _is_finite(x):
-            raise Error("query must be finite")
+            raise Error(String("query must be finite: received ", x))
 
         if x < self._knots[0]:
             if self._extrapolation == ExtrapolationPolicy.ERROR:
@@ -665,7 +713,7 @@ struct CubicSplineInterpolator(Copyable, Equatable, Writable):
         queries always raise.
         """
         if not _is_finite(x):
-            raise Error("query must be finite")
+            raise Error(String("query must be finite: received ", x))
 
         if x < self._knots[0]:
             if self._extrapolation == ExtrapolationPolicy.ERROR:
@@ -702,7 +750,7 @@ struct CubicSplineInterpolator(Copyable, Equatable, Writable):
         exterior queries, and non-finite queries always raise.
         """
         if not _is_finite(x):
-            raise Error("query must be finite")
+            raise Error(String("query must be finite: received ", x))
 
         if x < self._knots[0]:
             if self._extrapolation == ExtrapolationPolicy.ERROR:

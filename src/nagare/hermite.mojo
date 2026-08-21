@@ -246,7 +246,7 @@ struct CubicHermiteInterpolator(Copyable, Equatable, Writable):
         payload outside the domain.
         """
         if not _is_finite(x):
-            raise Error("query must be finite")
+            raise Error(String("query must be finite: received ", x))
 
         if x < self._knots[0]:
             if self._extrapolation == ExtrapolationPolicy.ERROR:
@@ -296,7 +296,7 @@ struct CubicHermiteInterpolator(Copyable, Equatable, Writable):
         query. Non-finite queries always raise.
         """
         if not _is_finite(x):
-            raise Error("query must be finite")
+            raise Error(String("query must be finite: received ", x))
 
         if x < self._knots[0]:
             if self._extrapolation == ExtrapolationPolicy.ERROR:

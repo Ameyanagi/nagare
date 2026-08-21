@@ -120,7 +120,7 @@ struct StepInterpolator(Copyable, Equatable, Writable):
     def evaluate(self, x: Float64) raises -> Float64:
         """Evaluate one finite query under the configured mode and policy."""
         if not _is_finite(x):
-            raise Error("query must be finite")
+            raise Error(String("query must be finite: received ", x))
 
         if x < self._knots[0]:
             if self._extrapolation == ExtrapolationPolicy.ERROR:

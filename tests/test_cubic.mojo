@@ -192,7 +192,7 @@ def test_fill_policy_applies_to_values_and_derivatives_outside_domain() raises:
         reference.second_derivative(1.5),
     )
 
-    with assert_raises(contains="query must be finite"):
+    with assert_raises(contains="query must be finite: received nan"):
         _ = custom_fill.evaluate(Float64("nan"))
     with assert_raises(contains="query must be finite"):
         _ = custom_fill.derivative(Float64("inf"))
@@ -241,12 +241,14 @@ def test_explicit_validate_rechecks_table_and_coefficients() raises:
 
     var short_coefficients = hand_fixture()
     short_coefficients._a = [0.0]
-    with assert_raises(contains="buffers must match interval count"):
+    with assert_raises(
+        contains="expected 3, len(a) = 1, len(b) = 3, len(c) = 3, len(d) = 3"
+    ):
         short_coefficients.validate()
 
     var non_finite_coefficients = hand_fixture()
     non_finite_coefficients._d[1] = Float64("nan")
-    with assert_raises(contains="coefficients must be finite"):
+    with assert_raises(contains="coefficients must be finite: d[1] is nan"):
         non_finite_coefficients.validate()
 
 

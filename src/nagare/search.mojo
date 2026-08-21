@@ -11,7 +11,12 @@ def _is_finite(value: Float64) -> Bool:
 
 def _validate_knots(knots: List[Float64]) raises:
     if len(knots) < 2:
-        raise Error("knot sequence must contain at least two values")
+        raise Error(
+            String(
+                "knot sequence must contain at least two values: received ",
+                len(knots),
+            )
+        )
     if not _is_finite(knots[0]):
         raise Error(String("knots must be finite: knots[0] is ", knots[0]))
     for index in range(1, len(knots)):
@@ -67,7 +72,7 @@ def locate_interval(knots: List[Float64], x: Float64) raises -> Int:
     """
     _validate_knots(knots)
     if not _is_finite(x):
-        raise Error("query must be finite")
+        raise Error(String("query must be finite: received ", x))
     if x < knots[0] or x > knots[len(knots) - 1]:
         raise Error(
             String(
