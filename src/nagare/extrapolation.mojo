@@ -1,5 +1,6 @@
 """Explicit out-of-domain behavior for interpolants."""
 
+from std.io import Writable, Writer
 from std.memory import bitcast
 
 
@@ -21,7 +22,13 @@ def _domain_error_message(
     )
 
 
-struct ExtrapolationPolicy(Copyable, Equatable, ImplicitlyCopyable):
+def _validate_integration_bounds(a: Float64, b: Float64) raises:
+    """Reject non-finite integration bounds with both values in context."""
+    if a != a or a - a != 0.0 or b != b or b - b != 0.0:
+        raise Error(String("integration bounds must be finite: a = ", a, ", b = ", b))
+
+
+struct ExtrapolationPolicy(Copyable, Equatable, ImplicitlyCopyable, Writable):
     """Nominal policy for queries outside an interpolant's knot domain.
 
     `ERROR` rejects an out-of-domain query, `CLAMP` returns the nearest endpoint
@@ -70,3 +77,48 @@ struct ExtrapolationPolicy(Copyable, Equatable, ImplicitlyCopyable):
         return self._value == other._value and bitcast[DType.uint64](
             self._fill
         ) == bitcast[DType.uint64](other._fill)
+
+    def __str__(self) -> String:
+        var result = String()
+        self.write_to(result)
+        return result^
+
+    def write_to[W: Writer](self, mut writer: W):
+        """Write the stable public spelling, including a fill payload."""
+        if self == Self.ERROR:
+            writer.write("ERROR")
+        elif self == Self.CLAMP:
+            writer.write("CLAMP")
+        elif self == Self.LINEAR:
+            writer.write("LINEAR")
+        else:
+            writer.write("FILL(value=", self._fill, ")")
+
+
+def _integrate_exterior_tail(
+    policy: ExtrapolationPolicy,
+    start: Float64,
+    end: Float64,
+    endpoint_x: Float64,
+    endpoint_y: Float64,
+    endpoint_slope: Float64,
+    domain_start: Float64,
+    domain_end: Float64,
+) raises -> Float64:
+    """Integrate one known non-empty exterior tail under `policy`."""
+    if policy == ExtrapolationPolicy.ERROR:
+        var rejected = end
+        if start < domain_start:
+            rejected = start
+        raise Error(_domain_error_message(rejected, domain_start, domain_end))
+
+    var width = end - start
+    if policy == ExtrapolationPolicy.CLAMP:
+        return endpoint_y * width
+    if policy.is_fill():
+        return policy.fill_value() * width
+
+    var left_offset = start - endpoint_x
+    var right_offset = end - endpoint_x
+    var midpoint_offset = 0.5 * left_offset + 0.5 * right_offset
+    return width * (endpoint_y + endpoint_slope * midpoint_offset)

@@ -1,8 +1,14 @@
 """Validated one-dimensional piecewise-linear interpolation."""
 
 from std.collections import List
+from std.io import Writable, Writer
 
-from .extrapolation import ExtrapolationPolicy, _domain_error_message
+from .extrapolation import (
+    ExtrapolationPolicy,
+    _domain_error_message,
+    _integrate_exterior_tail,
+    _validate_integration_bounds,
+)
 from .search import _is_finite, _locate_interval_in_domain, _validate_knots
 
 
@@ -59,6 +65,27 @@ def _stable_linear_value(y0: Float64, y1: Float64, parameter: Float64) -> Float6
     return scale * normalized
 
 
+def _stable_secant(
+    x0: Float64,
+    x1: Float64,
+    y0: Float64,
+    y1: Float64,
+) -> Float64:
+    """Return the segment slope without an avoidable infinity/infinity."""
+    var delta_x = x1 - x0
+    var delta_y = y1 - y0
+    if _is_finite(delta_x) and _is_finite(delta_y):
+        return delta_y / delta_x
+
+    var y_scale = max(abs(y0), abs(y1))
+    if y_scale == 0.0:
+        return 0.0
+    var x_scale = max(abs(x0), abs(x1))
+    var normalized_x = x1 / x_scale - x0 / x_scale
+    var normalized_y = y1 / y_scale - y0 / y_scale
+    return (normalized_y / normalized_x) * (y_scale / x_scale)
+
+
 def _validate_table(knots: List[Float64], values: List[Float64]) raises:
     """Validate every invariant required by a linear interpolation table."""
     _validate_knots(knots)
@@ -83,7 +110,7 @@ def _validate_table(knots: List[Float64], values: List[Float64]) raises:
             )
 
 
-struct LinearInterpolator(Copyable):
+struct LinearInterpolator(Copyable, Equatable, Writable):
     """An owning piecewise-linear interpolant over finite `Float64` data.
 
     Construction validates the table, which read-only methods trust thereafter.
@@ -139,6 +166,19 @@ struct LinearInterpolator(Copyable):
             return y1
         return _stable_linear_value(y0, y1, _segment_parameter(x0, x1, x))
 
+    def _segment_slope(self, index: Int) -> Float64:
+        return _stable_secant(
+            self._knots[index],
+            self._knots[index + 1],
+            self._values[index],
+            self._values[index + 1],
+        )
+
+    def _integrate_segment(self, index: Int, start: Float64, end: Float64) -> Float64:
+        var left = self._evaluate_segment(index, start)
+        var right = self._evaluate_segment(index, end)
+        return (0.5 * left + 0.5 * right) * (end - start)
+
     def evaluate(self, x: Float64) raises -> Float64:
         """Evaluate one finite query under the configured extrapolation policy.
 
@@ -177,6 +217,102 @@ struct LinearInterpolator(Copyable):
 
         return self._evaluate_segment(_locate_interval_in_domain(self._knots, x), x)
 
+    def derivative(self, x: Float64) raises -> Float64:
+        """Return the piecewise-constant first derivative.
+
+        Interior knots select the segment to their right, matching evaluation's
+        interval search. The final knot selects the final segment. Outside the
+        domain, `CLAMP` returns zero, `LINEAR` returns the endpoint segment
+        slope, `FILL` returns its payload, and `ERROR` rejects the query.
+        """
+        if not _is_finite(x):
+            raise Error("query must be finite")
+
+        if x < self._knots[0]:
+            if self._extrapolation == ExtrapolationPolicy.ERROR:
+                raise Error(
+                    _domain_error_message(
+                        x, self._knots[0], self._knots[len(self._knots) - 1]
+                    )
+                )
+            if self._extrapolation == ExtrapolationPolicy.CLAMP:
+                return 0.0
+            if self._extrapolation.is_fill():
+                return self._extrapolation.fill_value()
+            return self._segment_slope(0)
+
+        var final_knot = len(self._knots) - 1
+        if x > self._knots[final_knot]:
+            if self._extrapolation == ExtrapolationPolicy.ERROR:
+                raise Error(
+                    _domain_error_message(x, self._knots[0], self._knots[final_knot])
+                )
+            if self._extrapolation == ExtrapolationPolicy.CLAMP:
+                return 0.0
+            if self._extrapolation.is_fill():
+                return self._extrapolation.fill_value()
+            return self._segment_slope(final_knot - 1)
+
+        return self._segment_slope(_locate_interval_in_domain(self._knots, x))
+
+    def integrate(self, a: Float64, b: Float64) raises -> Float64:
+        """Definite integral over `[a, b]` (sign-flipped when `a > b`).
+
+        Segments are integrated in closed form. Portions outside the domain
+        follow the configured extrapolation policy; `ERROR` rejects them, and
+        `FILL` contributes `fill_value * width` (NaN-propagating by default).
+        """
+        _validate_integration_bounds(a, b)
+        if a == b:
+            return 0.0
+        if a > b:
+            return -self.integrate(b, a)
+
+        var domain_start = self._knots[0]
+        var final_knot = len(self._knots) - 1
+        var domain_end = self._knots[final_knot]
+        var result = 0.0
+        if a < domain_start:
+            var tail_end = min(b, domain_start)
+            if a < tail_end:
+                result += _integrate_exterior_tail(
+                    self._extrapolation,
+                    a,
+                    tail_end,
+                    domain_start,
+                    self._values[0],
+                    self._segment_slope(0),
+                    domain_start,
+                    domain_end,
+                )
+        if b > domain_end:
+            var tail_start = max(a, domain_end)
+            if tail_start < b:
+                result += _integrate_exterior_tail(
+                    self._extrapolation,
+                    tail_start,
+                    b,
+                    domain_end,
+                    self._values[final_knot],
+                    self._segment_slope(final_knot - 1),
+                    domain_start,
+                    domain_end,
+                )
+
+        var interior_start = max(a, domain_start)
+        var interior_end = min(b, domain_end)
+        if interior_start >= interior_end:
+            return result
+
+        var index = _locate_interval_in_domain(self._knots, interior_start)
+        var position = interior_start
+        while position < interior_end:
+            var segment_end = min(interior_end, self._knots[index + 1])
+            result += self._integrate_segment(index, position, segment_end)
+            position = segment_end
+            index += 1
+        return result
+
     def evaluate(self, queries: Span[Float64, _]) raises -> List[Float64]:
         """Allocate and return results for finite queries in order.
 
@@ -210,3 +346,41 @@ struct LinearInterpolator(Copyable):
             )
         for index in range(len(queries)):
             results[index] = self.evaluate(queries[index])
+
+    def __eq__(self, other: Self) -> Bool:
+        """Compare validated tables and policy exactly.
+
+        Validated knot and value tables never contain NaN, so elementwise
+        `Float64` equality is sound.
+        """
+        if (
+            len(self._knots) != len(other._knots)
+            or len(self._values) != len(other._values)
+            or self._extrapolation != other._extrapolation
+        ):
+            return False
+        for index in range(len(self._knots)):
+            if (
+                self._knots[index] != other._knots[index]
+                or self._values[index] != other._values[index]
+            ):
+                return False
+        return True
+
+    def __str__(self) -> String:
+        var result = String()
+        self.write_to(result)
+        return result^
+
+    def write_to[W: Writer](self, mut writer: W):
+        writer.write(
+            "LinearInterpolator(",
+            len(self._knots),
+            " knots on [",
+            self._knots[0],
+            ", ",
+            self._knots[len(self._knots) - 1],
+            "], extrapolation=",
+            self._extrapolation,
+            ")",
+        )

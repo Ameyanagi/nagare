@@ -1,8 +1,14 @@
 """Shared piecewise-cubic Hermite interpolation machinery."""
 
 from std.collections import List
+from std.io import Writable, Writer
 
-from .extrapolation import ExtrapolationPolicy, _domain_error_message
+from .extrapolation import (
+    ExtrapolationPolicy,
+    _domain_error_message,
+    _integrate_exterior_tail,
+    _validate_integration_bounds,
+)
 from .linear import _segment_parameter, _validate_table
 from .search import _is_finite, _locate_interval_in_domain
 
@@ -96,6 +102,65 @@ def _derivative_segment(
     )
 
 
+def _hermite_antiderivative(
+    parameter: Float64,
+    width: Float64,
+    left_value: Float64,
+    right_value: Float64,
+    left_slope: Float64,
+    right_slope: Float64,
+) -> Float64:
+    """Evaluate an interval's Hermite-basis antiderivative from its left end."""
+    var parameter_squared = parameter * parameter
+    var parameter_cubed = parameter_squared * parameter
+    var parameter_fourth = parameter_cubed * parameter
+    var left_value_basis = 0.5 * parameter_fourth - parameter_cubed + parameter
+    var left_slope_basis = (
+        0.25 * parameter_fourth
+        - (2.0 / 3.0) * parameter_cubed
+        + 0.5 * parameter_squared
+    )
+    var right_value_basis = -0.5 * parameter_fourth + parameter_cubed
+    var right_slope_basis = 0.25 * parameter_fourth - (1.0 / 3.0) * parameter_cubed
+    return width * (
+        left_value_basis * left_value
+        + left_slope_basis * width * left_slope
+        + right_value_basis * right_value
+        + right_slope_basis * width * right_slope
+    )
+
+
+def _integrate_segment(
+    knots: List[Float64],
+    values: List[Float64],
+    slopes: List[Float64],
+    index: Int,
+    start: Float64,
+    end: Float64,
+) -> Float64:
+    """Integrate one partial cubic Hermite interval exactly."""
+    var x0 = knots[index]
+    var x1 = knots[index + 1]
+    var width = x1 - x0
+    var start_parameter = _segment_parameter(x0, x1, start)
+    var end_parameter = _segment_parameter(x0, x1, end)
+    return _hermite_antiderivative(
+        end_parameter,
+        width,
+        values[index],
+        values[index + 1],
+        slopes[index],
+        slopes[index + 1],
+    ) - _hermite_antiderivative(
+        start_parameter,
+        width,
+        values[index],
+        values[index + 1],
+        slopes[index],
+        slopes[index + 1],
+    )
+
+
 def _left_slope(slopes: List[Float64]) -> Float64:
     """Return the left endpoint tangent slope."""
     return slopes[0]
@@ -118,7 +183,7 @@ def _evaluate_linear_ray(
     return endpoint_y + endpoint_slope * (x - endpoint_x)
 
 
-struct CubicHermiteInterpolator(Copyable):
+struct CubicHermiteInterpolator(Copyable, Equatable, Writable):
     """An owning C1 piecewise-cubic Hermite interpolant.
 
     Each supplied slope is `dy/dx` at the corresponding knot. Construction
@@ -266,6 +331,71 @@ struct CubicHermiteInterpolator(Copyable):
             x,
         )
 
+    def integrate(self, a: Float64, b: Float64) raises -> Float64:
+        """Definite integral over `[a, b]` (sign-flipped when `a > b`).
+
+        Segments are integrated in closed form. Portions outside the domain
+        follow the configured extrapolation policy; `ERROR` rejects them, and
+        `FILL` contributes `fill_value * width` (NaN-propagating by default).
+        """
+        _validate_integration_bounds(a, b)
+        if a == b:
+            return 0.0
+        if a > b:
+            return -self.integrate(b, a)
+
+        var domain_start = self._knots[0]
+        var final_knot = len(self._knots) - 1
+        var domain_end = self._knots[final_knot]
+        var result = 0.0
+        if a < domain_start:
+            var tail_end = min(b, domain_start)
+            if a < tail_end:
+                result += _integrate_exterior_tail(
+                    self._extrapolation,
+                    a,
+                    tail_end,
+                    domain_start,
+                    self._values[0],
+                    _left_slope(self._slopes),
+                    domain_start,
+                    domain_end,
+                )
+        if b > domain_end:
+            var tail_start = max(a, domain_end)
+            if tail_start < b:
+                result += _integrate_exterior_tail(
+                    self._extrapolation,
+                    tail_start,
+                    b,
+                    domain_end,
+                    self._values[final_knot],
+                    _right_slope(self._slopes),
+                    domain_start,
+                    domain_end,
+                )
+
+        var interior_start = max(a, domain_start)
+        var interior_end = min(b, domain_end)
+        if interior_start >= interior_end:
+            return result
+
+        var index = _locate_interval_in_domain(self._knots, interior_start)
+        var position = interior_start
+        while position < interior_end:
+            var segment_end = min(interior_end, self._knots[index + 1])
+            result += _integrate_segment(
+                self._knots,
+                self._values,
+                self._slopes,
+                index,
+                position,
+                segment_end,
+            )
+            position = segment_end
+            index += 1
+        return result
+
     def evaluate(self, queries: Span[Float64, _]) raises -> List[Float64]:
         """Allocate and return results for finite queries in order.
 
@@ -298,3 +428,43 @@ struct CubicHermiteInterpolator(Copyable):
             )
         for index in range(len(queries)):
             results[index] = self.evaluate(queries[index])
+
+    def __eq__(self, other: Self) -> Bool:
+        """Compare validated tables, stored slopes, and policy exactly.
+
+        Validation excludes NaN from every table, so elementwise `Float64`
+        equality is sound.
+        """
+        if (
+            len(self._knots) != len(other._knots)
+            or len(self._values) != len(other._values)
+            or len(self._slopes) != len(other._slopes)
+            or self._extrapolation != other._extrapolation
+        ):
+            return False
+        for index in range(len(self._knots)):
+            if (
+                self._knots[index] != other._knots[index]
+                or self._values[index] != other._values[index]
+                or self._slopes[index] != other._slopes[index]
+            ):
+                return False
+        return True
+
+    def __str__(self) -> String:
+        var result = String()
+        self.write_to(result)
+        return result^
+
+    def write_to[W: Writer](self, mut writer: W):
+        writer.write(
+            "CubicHermiteInterpolator(",
+            len(self._knots),
+            " knots on [",
+            self._knots[0],
+            ", ",
+            self._knots[len(self._knots) - 1],
+            "], extrapolation=",
+            self._extrapolation,
+            ")",
+        )

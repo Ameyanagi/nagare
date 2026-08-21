@@ -1,7 +1,7 @@
 """Precise one-dimensional interpolation primitives."""
 
 from .akima import AkimaInterpolator
-from .cubic import CubicSplineInterpolator
+from .cubic import BoundaryCondition, CubicSplineInterpolator
 from .extrapolation import ExtrapolationPolicy
 from .hermite import CubicHermiteInterpolator
 from .linear import LinearInterpolator

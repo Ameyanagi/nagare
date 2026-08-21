@@ -212,6 +212,8 @@ def test_non_finite_query_is_never_extrapolated() raises:
         _ = interpolator.evaluate(Float64("nan"))
     with assert_raises(contains="query must be finite"):
         _ = interpolator.evaluate(Float64("inf"))
+    with assert_raises(contains="query must be finite"):
+        _ = interpolator.derivative(Float64("nan"))
 
 
 def test_batch_matches_scalar_for_clamp_and_linear_policies() raises:
@@ -381,6 +383,92 @@ def test_interpolated_value_stays_between_segment_endpoints() raises:
             assert_true(value >= -1.0 and value <= 2.0)
         else:
             assert_true(value >= -1.0 and value <= 8.0)
+
+
+def test_derivative_is_right_continuous_and_follows_policy() raises:
+    var interpolator = reference_interpolator()
+    assert_close(interpolator.derivative(0.0), 2.0)
+    assert_close(interpolator.derivative(0.5), -2.0)
+    assert_close(interpolator.derivative(2.0), 3.0)
+    assert_close(interpolator.derivative(5.0), 3.0)
+    with assert_raises(contains="outside the knot domain"):
+        _ = interpolator.derivative(-1.0)
+
+    var clamp = reference_interpolator(ExtrapolationPolicy.CLAMP)
+    assert_equal(clamp.derivative(-1.0), 0.0)
+    assert_equal(clamp.derivative(6.0), 0.0)
+    var linear = reference_interpolator(ExtrapolationPolicy.LINEAR)
+    assert_equal(linear.derivative(-1.0), 2.0)
+    assert_equal(linear.derivative(6.0), 3.0)
+    var fill = reference_interpolator(ExtrapolationPolicy.fill(-7.0))
+    assert_equal(fill.derivative(-1.0), -7.0)
+    assert_equal(fill.derivative(6.0), -7.0)
+
+
+def shared_integral_table(
+    policy: ExtrapolationPolicy = ExtrapolationPolicy.ERROR,
+) raises -> LinearInterpolator:
+    return LinearInterpolator(
+        [0.0, 1.0, 2.5, 3.0, 4.5, 6.0],
+        [0.0, 2.0, 1.0, 3.5, 3.0, 4.0],
+        extrapolation=policy,
+    )
+
+
+def test_linear_closed_form_integrals_direction_and_degenerate_ranges() raises:
+    var interpolator = shared_integral_table()
+    # Exact trapezoid sums, cross-checked against scipy 1.18.0 / numpy 2.5.2.
+    assert_close(interpolator.integrate(0.0, 6.0), 14.5)
+    assert_close(interpolator.integrate(0.5, 5.5), 12.333333333333332)
+    assert_close(
+        interpolator.integrate(5.5, 0.5),
+        -interpolator.integrate(0.5, 5.5),
+    )
+    assert_equal(interpolator.integrate(2.5, 2.5), 0.0)
+    with assert_raises(contains="integration bounds must be finite"):
+        _ = interpolator.integrate(Float64("nan"), 1.0)
+    with assert_raises(contains="integration bounds must be finite"):
+        _ = interpolator.integrate(0.0, Float64("inf"))
+
+
+def test_integral_exterior_tails_follow_each_policy() raises:
+    with assert_raises(contains="outside the knot domain"):
+        _ = shared_integral_table().integrate(-1.0, 6.0)
+
+    # Left endpoint value is zero and right endpoint value is four.
+    var clamp = shared_integral_table(ExtrapolationPolicy.CLAMP)
+    assert_close(clamp.integrate(-1.0, 7.0), 18.5)
+
+    var default_fill = shared_integral_table(ExtrapolationPolicy.FILL)
+    assert_close(default_fill.integrate(0.0, 6.0), 14.5)
+    assert_true(default_fill.integrate(-1.0, 6.0) != default_fill.integrate(-1.0, 6.0))
+    var zero_fill = shared_integral_table(ExtrapolationPolicy.fill(0.0))
+    assert_close(zero_fill.integrate(-1.0, 7.0), 14.5)
+
+    # Linear rays extend the first secant (slope 2) and final secant (slope 2/3).
+    var linear = shared_integral_table(ExtrapolationPolicy.LINEAR)
+    assert_close(linear.integrate(-1.0, 7.0), 17.833333333333332)
+
+
+def test_linear_equality_and_writable_shapes() raises:
+    var first = shared_integral_table()
+    var second = shared_integral_table()
+    var clamp = shared_integral_table(ExtrapolationPolicy.CLAMP)
+    var first_fill = shared_integral_table(ExtrapolationPolicy.fill(-1.0))
+    var second_fill = shared_integral_table(ExtrapolationPolicy.fill(-2.0))
+    assert_true(first == second)
+    assert_true(first != clamp)
+    assert_true(first_fill != second_fill)
+    assert_true(
+        String(first).startswith(
+            "LinearInterpolator(6 knots on [0.0, 6.0], extrapolation=ERROR)"
+        )
+    )
+    assert_equal(String(ExtrapolationPolicy.ERROR), "ERROR")
+    assert_equal(String(ExtrapolationPolicy.CLAMP), "CLAMP")
+    assert_equal(String(ExtrapolationPolicy.LINEAR), "LINEAR")
+    assert_equal(String(ExtrapolationPolicy.FILL), "FILL(value=nan)")
+    assert_equal(String(ExtrapolationPolicy.fill(-1.5)), "FILL(value=-1.5)")
 
 
 def main() raises:

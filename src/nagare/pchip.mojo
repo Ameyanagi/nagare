@@ -1,6 +1,7 @@
 """Shape-preserving piecewise-cubic Hermite interpolation."""
 
 from std.collections import List
+from std.io import Writable, Writer
 
 from .extrapolation import ExtrapolationPolicy
 from .hermite import CubicHermiteInterpolator
@@ -80,7 +81,7 @@ def _pchip_slopes(knots: List[Float64], values: List[Float64]) -> List[Float64]:
     return slopes^
 
 
-struct PchipInterpolator(Copyable):
+struct PchipInterpolator(Copyable, Equatable, Writable):
     """Shape-preserving C1 piecewise-cubic Hermite interpolant (Fritsch–Carlson).
 
     Construction validates the table and derives monotonicity-preserving knot
@@ -146,6 +147,15 @@ struct PchipInterpolator(Copyable):
         """
         return self._engine.derivative(x)
 
+    def integrate(self, a: Float64, b: Float64) raises -> Float64:
+        """Definite integral over `[a, b]` (sign-flipped when `a > b`).
+
+        Segments are integrated in closed form. Portions outside the domain
+        follow the configured extrapolation policy; `ERROR` rejects them, and
+        `FILL` contributes `fill_value * width` (NaN-propagating by default).
+        """
+        return self._engine.integrate(a, b)
+
     def evaluate(self, queries: Span[Float64, _]) raises -> List[Float64]:
         """Allocate and return results for finite queries in order.
 
@@ -165,3 +175,29 @@ struct PchipInterpolator(Copyable):
         results contents are unspecified after a raise.
         """
         self._engine.evaluate_into(queries, results)
+
+    def __eq__(self, other: Self) -> Bool:
+        """Compare the validated table, derived slopes, and policy exactly.
+
+        Engine validation excludes NaN, so elementwise `Float64` equality is
+        sound.
+        """
+        return self._engine == other._engine
+
+    def __str__(self) -> String:
+        var result = String()
+        self.write_to(result)
+        return result^
+
+    def write_to[W: Writer](self, mut writer: W):
+        writer.write(
+            "PchipInterpolator(",
+            self.knot_count(),
+            " knots on [",
+            self.domain_start(),
+            ", ",
+            self.domain_end(),
+            "], extrapolation=",
+            self._engine._extrapolation,
+            ")",
+        )

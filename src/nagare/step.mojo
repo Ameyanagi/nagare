@@ -1,13 +1,14 @@
 """Validated one-dimensional piecewise-constant interpolation."""
 
 from std.collections import List
+from std.io import Writable, Writer
 
 from .extrapolation import ExtrapolationPolicy, _domain_error_message
 from .linear import _validate_table
 from .search import _is_finite, _locate_interval_in_domain
 
 
-struct StepMode(Copyable, Equatable, ImplicitlyCopyable):
+struct StepMode(Copyable, Equatable, ImplicitlyCopyable, Writable):
     """Nominal selection rule for values between step-interpolator knots."""
 
     var _value: Int
@@ -22,6 +23,20 @@ struct StepMode(Copyable, Equatable, ImplicitlyCopyable):
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
+    def __str__(self) -> String:
+        var result = String()
+        self.write_to(result)
+        return result^
+
+    def write_to[W: Writer](self, mut writer: W):
+        """Write the stable public mode spelling."""
+        if self == Self.PREVIOUS:
+            writer.write("PREVIOUS")
+        elif self == Self.NEXT:
+            writer.write("NEXT")
+        else:
+            writer.write("NEAREST")
+
 
 def _validate_step_extrapolation(policy: ExtrapolationPolicy) raises:
     if policy == ExtrapolationPolicy.LINEAR:
@@ -31,7 +46,7 @@ def _validate_step_extrapolation(policy: ExtrapolationPolicy) raises:
         )
 
 
-struct StepInterpolator(Copyable):
+struct StepInterpolator(Copyable, Equatable, Writable):
     """An owning piecewise-constant interpolant over finite `Float64` data.
 
     `PREVIOUS`, the scientific default and zero-order hold, returns `values[i]`
@@ -158,3 +173,44 @@ struct StepInterpolator(Copyable):
             )
         for index in range(len(queries)):
             results[index] = self.evaluate(queries[index])
+
+    def __eq__(self, other: Self) -> Bool:
+        """Compare validated tables, mode, and policy exactly.
+
+        Validation excludes NaN from tables, so elementwise `Float64` equality
+        is sound.
+        """
+        if (
+            len(self._knots) != len(other._knots)
+            or len(self._values) != len(other._values)
+            or self._mode != other._mode
+            or self._extrapolation != other._extrapolation
+        ):
+            return False
+        for index in range(len(self._knots)):
+            if (
+                self._knots[index] != other._knots[index]
+                or self._values[index] != other._values[index]
+            ):
+                return False
+        return True
+
+    def __str__(self) -> String:
+        var result = String()
+        self.write_to(result)
+        return result^
+
+    def write_to[W: Writer](self, mut writer: W):
+        writer.write(
+            "StepInterpolator(",
+            len(self._knots),
+            " knots on [",
+            self._knots[0],
+            ", ",
+            self._knots[len(self._knots) - 1],
+            "], mode=",
+            self._mode,
+            ", extrapolation=",
+            self._extrapolation,
+            ")",
+        )

@@ -204,5 +204,28 @@ def test_span_wrapper_and_evaluate_into_agree() raises:
         interpolator.evaluate_into(queries, short_results)
 
 
+def test_closed_form_integral_and_equality_writable_surface() raises:
+    var first = reference_interpolator()
+    var second = reference_interpolator()
+    var clamp = reference_interpolator(ExtrapolationPolicy.CLAMP)
+    var different_slopes = CubicHermiteInterpolator(
+        [0.0, 1.0, 2.5, 3.0, 4.5, 6.0],
+        [0.0, 2.0, 1.0, 3.5, 3.0, 4.0],
+        [1.0, -0.5, 2.0, 0.0, 1.5, 0.0],
+    )
+    # scipy 1.18.0 / numpy 2.5.2: CubicHermiteSpline(X, Y, S).integrate(0, 6)
+    assert_close(first.integrate(0.0, 6.0), 14.385416666666666)
+    assert_close(first.integrate(6.0, 0.0), -14.385416666666666)
+    assert_equal(first.integrate(3.0, 3.0), 0.0)
+    assert_true(first == second)
+    assert_true(first != clamp)
+    assert_true(first != different_slopes)
+    assert_true(
+        String(first).startswith(
+            "CubicHermiteInterpolator(6 knots on [0.0, 6.0], extrapolation=ERROR)"
+        )
+    )
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

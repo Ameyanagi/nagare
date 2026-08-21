@@ -21,10 +21,16 @@ The implemented foundation is layered as follows:
 ```text
 public root
 ├── ExtrapolationPolicy       nominal out-of-domain behavior
+├── BoundaryCondition         nominal cubic-spline endpoint constraints
+├── StepMode                  nominal piecewise-constant selection rule
 ├── locate_interval           validated standalone lookup
-└── LinearInterpolator        validated owning interpolant
-       ├── search             internal lookup over construction-validated data
-       └── extrapolation      shared semantic policy
+└── owning interpolators
+    ├── StepInterpolator      piecewise constant
+    ├── LinearInterpolator    piecewise linear
+    ├── CubicSplineInterpolator
+    ├── CubicHermiteInterpolator
+    ├── PchipInterpolator     shape-preserving Hermite slopes
+    └── AkimaInterpolator     modified-Akima Hermite slopes
 ```
 
 The unchecked interval locator is internal and operates on the finite,
@@ -46,7 +52,7 @@ typed values and produce deterministic outputs for deterministic inputs. I/O,
 clocks, randomness, terminal queries, filesystem access, and accelerator
 selection stay at explicit effect or backend boundaries.
 
-`LinearInterpolator` owns its `List[Float64]` inputs, but Mojo 1.0 does not make
+Interpolators own their `List[Float64]` inputs, but Mojo 1.0 does not make
 underscore-prefixed fields private. Nagare treats those fields as private by
 convention, and direct mutation is outside the contract. Read-only metadata is
 `O(1)` and evaluation performs `O(log n)` interval search without rescanning

@@ -134,5 +134,24 @@ def test_batch_and_evaluate_into_agree() raises:
         interpolator.evaluate_into(queries, short_results)
 
 
+def test_step_equality_and_writable_shapes() raises:
+    var first = step_fixture()
+    var second = step_fixture()
+    var next = step_fixture(StepMode.NEXT)
+    var clamp = step_fixture(policy=ExtrapolationPolicy.CLAMP)
+    assert_true(first == second)
+    assert_true(first != next)
+    assert_true(first != clamp)
+    assert_equal(String(StepMode.PREVIOUS), "PREVIOUS")
+    assert_equal(String(StepMode.NEXT), "NEXT")
+    assert_equal(String(StepMode.NEAREST), "NEAREST")
+    assert_true(
+        String(first).startswith(
+            "StepInterpolator(4 knots on [0.0, 4.0], mode=PREVIOUS, "
+            "extrapolation=ERROR)"
+        )
+    )
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
