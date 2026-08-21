@@ -14,7 +14,8 @@ install an application, renderer, language layer, or scientific stack.
 
 ## Layers
 
-Planned implementation areas: search, linear and polynomial interpolation, PCHIP, Akima, cubic and B-splines, smoothing splines, and extrapolation policy.
+Planned implementation areas: search, linear and polynomial interpolation,
+PCHIP, Makima, cubic and B-splines, smoothing splines, and extrapolation policy.
 
 The implemented foundation is layered as follows:
 
@@ -30,7 +31,7 @@ public root
     ├── CubicSplineInterpolator
     ├── CubicHermiteInterpolator
     ├── PchipInterpolator     shape-preserving Hermite slopes
-    └── AkimaInterpolator     modified-Akima Hermite slopes
+    └── MakimaInterpolator    modified-Akima Hermite slopes
 ```
 
 The unchecked interval locator is internal and operates on the finite,

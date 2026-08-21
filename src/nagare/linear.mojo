@@ -140,6 +140,14 @@ struct LinearInterpolator(Copyable, Equatable, Writable):
         """Explicitly revalidate the stored knot and value table."""
         _validate_table(self._knots, self._values)
 
+    def knots(self) -> Span[Float64, origin_of(self._knots)]:
+        """Read-only view of the validated knot sequence."""
+        return Span(self._knots)
+
+    def values(self) -> Span[Float64, origin_of(self._values)]:
+        """Read-only view of the validated value sequence."""
+        return Span(self._values)
+
     def knot_count(self) -> Int:
         """Return the knot count."""
         return len(self._knots)
@@ -217,6 +225,10 @@ struct LinearInterpolator(Copyable, Equatable, Writable):
 
         return self._evaluate_segment(_locate_interval_in_domain(self._knots, x), x)
 
+    def __call__(self, x: Float64) raises -> Float64:
+        """Call `evaluate`; `evaluate` is the primary documented name."""
+        return self.evaluate(x)
+
     def derivative(self, x: Float64) raises -> Float64:
         """Return the piecewise-constant first derivative.
 
@@ -254,6 +266,40 @@ struct LinearInterpolator(Copyable, Equatable, Writable):
             return self._segment_slope(final_knot - 1)
 
         return self._segment_slope(_locate_interval_in_domain(self._knots, x))
+
+    def derivative(self, queries: Span[Float64, _]) raises -> List[Float64]:
+        """Allocate and return first derivatives for finite queries in order.
+
+        Raises on the first offending query (a non-finite query under every
+        policy, or an out-of-domain query under `ERROR`) and returns no partial
+        results. Empty input returns an empty list.
+        """
+        var results = List[Float64](length=len(queries), fill=0.0)
+        self.derivative_into(queries, results)
+        return results^
+
+    def derivative_into(
+        self,
+        queries: Span[Float64, _],
+        results: Span[mut=True, Float64, _],
+    ) raises:
+        """Evaluate each first derivative into `results` without allocating.
+
+        Raises if the buffer lengths differ or on the first offending query;
+        results contents are unspecified after a raise.
+        """
+        if len(queries) != len(results):
+            raise Error(
+                String(
+                    "query and result buffers must have equal length: ",
+                    "len(queries) = ",
+                    len(queries),
+                    ", len(results) = ",
+                    len(results),
+                )
+            )
+        for index in range(len(queries)):
+            results[index] = self.derivative(queries[index])
 
     def integrate(self, a: Float64, b: Float64) raises -> Float64:
         """Definite integral over `[a, b]` (sign-flipped when `a > b`).
@@ -323,6 +369,10 @@ struct LinearInterpolator(Copyable, Equatable, Writable):
         var results = List[Float64](length=len(queries), fill=0.0)
         self.evaluate_into(queries, results)
         return results^
+
+    def __call__(self, queries: Span[Float64, _]) raises -> List[Float64]:
+        """Call `evaluate`; `evaluate` is the primary documented name."""
+        return self.evaluate(queries)
 
     def evaluate_into(
         self,

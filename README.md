@@ -10,7 +10,7 @@ Interpolation and spline algorithms for Mojo.
 | --- | --- |
 | `LinearInterpolator` | A robust baseline with no cubic overshoot. |
 | `PchipInterpolator` | Measured monotone data where shape preservation and no overshoot matter. |
-| `AkimaInterpolator` | A pleasing smooth makima curve with local response to data changes. |
+| `MakimaInterpolator` | A pleasing smooth makima curve with local response to data changes. |
 | `CubicSplineInterpolator` | The smoothest C2 curve; not-a-knot defaults match scipy. |
 | `StepInterpolator` with `PREVIOUS` | A zero-order hold for sampled controls or state. |
 | `CubicHermiteInterpolator` | Slopes are already known, such as from an ODE solver or instrument. |
@@ -112,8 +112,9 @@ does not require an application from the wider ecosystem.
 
 The Mojo import is `nagare`, the Conda distribution is `mojo-nagare`, and
 source lives under `src/nagare/`. The package exposes owning interpolators with
-scalar, batch, derivative, and closed-form integration surfaces where
-mathematically defined.
+scalar and batch evaluation, callable sugar, read-only knot/value views, scalar
+and batch first derivatives, scalar second derivatives on cubic interpolants,
+and closed-form integration surfaces where mathematically defined.
 
 Inputs must contain at least two finite, strictly increasing knots and an equal
 number of finite values. The default extrapolation policy raises instead of

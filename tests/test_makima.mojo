@@ -1,4 +1,4 @@
-from nagare import AkimaInterpolator, ExtrapolationPolicy
+from nagare import ExtrapolationPolicy, MakimaInterpolator
 from std.collections import List
 from std.testing import TestSuite, assert_equal, assert_raises, assert_true
 
@@ -18,15 +18,15 @@ def assert_close(
 
 def reference_interpolator(
     policy: ExtrapolationPolicy = ExtrapolationPolicy.ERROR,
-) raises -> AkimaInterpolator:
-    return AkimaInterpolator(
+) raises -> MakimaInterpolator:
+    return MakimaInterpolator(
         [0.0, 1.0, 2.5, 3.0, 4.5, 6.0],
         [0.0, 2.0, 1.0, 3.5, 3.0, 4.0],
         extrapolation=policy,
     )
 
 
-def metadata_matches_reference(interpolator: AkimaInterpolator) -> Bool:
+def metadata_matches_reference(interpolator: MakimaInterpolator) -> Bool:
     """Exercise every metadata accessor from a non-raising function."""
     return (
         interpolator.knot_count() == 6
@@ -90,10 +90,16 @@ def test_metadata_exact_knots_and_affine_reproduction() raises:
 
     var knots: List[Float64] = [0.0, 1.0, 2.5, 3.0, 4.5, 6.0]
     var values: List[Float64] = [0.0, 2.0, 1.0, 3.5, 3.0, 4.0]
+    var stored_knots = interpolator.knots()
+    var stored_values = interpolator.values()
+    assert_equal(len(stored_knots), len(knots))
+    assert_equal(len(stored_values), len(values))
     for index in range(len(knots)):
         assert_equal(interpolator.evaluate(knots[index]), values[index])
+        assert_equal(stored_knots[index], knots[index])
+        assert_equal(stored_values[index], values[index])
 
-    var affine = AkimaInterpolator(
+    var affine = MakimaInterpolator(
         [-2.0, -0.5, 1.0, 4.0, 8.0],
         [-3.0, 0.0, 3.0, 9.0, 17.0],
     )
@@ -101,13 +107,20 @@ def test_metadata_exact_knots_and_affine_reproduction() raises:
     for query in queries:
         assert_close(affine.evaluate(query), 2.0 * query + 1.0)
         assert_close(affine.derivative(query), 2.0)
+        assert_close(affine.second_derivative(query), 0.0)
+
+    assert_equal(affine(2.5), affine.evaluate(2.5))
+    var called = affine(queries)
+    var evaluated = affine.evaluate(queries)
+    for index in range(len(queries)):
+        assert_equal(called[index], evaluated[index])
 
 
 def test_tiny_weight_guard_is_relative_to_the_global_maximum() raises:
     # Unit secants at the left have a nonzero local weighted estimate, but the
     # remote 1e12 secants make their combined weight fall below scipy's global
     # 1e-9 relative threshold. The specified guarded slope is exactly zero.
-    var interpolator = AkimaInterpolator(
+    var interpolator = MakimaInterpolator(
         [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0],
         [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 1000000000005.0, 2000000000005.0],
     )
@@ -116,18 +129,18 @@ def test_tiny_weight_guard_is_relative_to_the_global_maximum() raises:
 
 def test_constructor_requires_four_valid_knots() raises:
     with assert_raises(contains="at least four knots: received 0"):
-        _ = AkimaInterpolator(List[Float64](), List[Float64]())
+        _ = MakimaInterpolator(List[Float64](), List[Float64]())
     with assert_raises(contains="at least four knots: received 3"):
-        _ = AkimaInterpolator([0.0, 1.0, 2.0], [1.0, 2.0, 3.0])
+        _ = MakimaInterpolator([0.0, 1.0, 2.0], [1.0, 2.0, 3.0])
     with assert_raises(contains="len(knots) = 4, len(values) = 3"):
-        _ = AkimaInterpolator([0.0, 1.0, 2.0, 3.0], [1.0, 2.0, 3.0])
+        _ = MakimaInterpolator([0.0, 1.0, 2.0, 3.0], [1.0, 2.0, 3.0])
     with assert_raises(contains="knots[2] = 1.0 <= knots[1] = 1.0"):
-        _ = AkimaInterpolator(
+        _ = MakimaInterpolator(
             [0.0, 1.0, 1.0, 3.0],
             [1.0, 2.0, 3.0, 4.0],
         )
     with assert_raises(contains="values[2] is nan"):
-        _ = AkimaInterpolator(
+        _ = MakimaInterpolator(
             [0.0, 1.0, 2.0, 3.0],
             [1.0, 2.0, Float64("nan"), 4.0],
         )
@@ -156,12 +169,16 @@ def test_error_clamp_linear_and_fill_extrapolation() raises:
         _ = error.evaluate(-1.0)
     with assert_raises(contains="outside the knot domain"):
         _ = error.derivative(7.0)
+    with assert_raises(contains="outside the knot domain"):
+        _ = error.second_derivative(7.0)
 
     var clamp = reference_interpolator(ExtrapolationPolicy.CLAMP)
     assert_equal(clamp.evaluate(-1.0), 0.0)
     assert_equal(clamp.evaluate(7.0), 4.0)
     assert_equal(clamp.derivative(-1.0), 0.0)
     assert_equal(clamp.derivative(7.0), 0.0)
+    assert_equal(clamp.second_derivative(-1.0), 0.0)
+    assert_equal(clamp.second_derivative(7.0), 0.0)
 
     var linear = reference_interpolator(ExtrapolationPolicy.LINEAR)
     var left_slope = linear.derivative(0.0)
@@ -170,16 +187,23 @@ def test_error_clamp_linear_and_fill_extrapolation() raises:
     assert_close(linear.evaluate(7.0), 4.0 + right_slope)
     assert_equal(linear.derivative(-1.0), left_slope)
     assert_equal(linear.derivative(7.0), right_slope)
+    assert_equal(linear.second_derivative(-1.0), 0.0)
+    assert_equal(linear.second_derivative(7.0), 0.0)
 
     var default_fill = reference_interpolator(ExtrapolationPolicy.FILL)
     assert_true(default_fill.evaluate(-1.0) != default_fill.evaluate(-1.0))
     assert_true(default_fill.derivative(7.0) != default_fill.derivative(7.0))
+    assert_true(
+        default_fill.second_derivative(7.0) != default_fill.second_derivative(7.0)
+    )
 
     var custom_fill = reference_interpolator(ExtrapolationPolicy.fill(-4.5))
     assert_equal(custom_fill.evaluate(-1.0), -4.5)
     assert_equal(custom_fill.evaluate(7.0), -4.5)
     assert_equal(custom_fill.derivative(-1.0), -4.5)
     assert_equal(custom_fill.derivative(7.0), -4.5)
+    assert_equal(custom_fill.second_derivative(-1.0), -4.5)
+    assert_equal(custom_fill.second_derivative(7.0), -4.5)
 
 
 def test_non_finite_queries_always_raise() raises:
@@ -188,6 +212,8 @@ def test_non_finite_queries_always_raise() raises:
         _ = interpolator.evaluate(Float64("nan"))
     with assert_raises(contains="query must be finite"):
         _ = interpolator.derivative(Float64("inf"))
+    with assert_raises(contains="query must be finite"):
+        _ = interpolator.second_derivative(Float64("-inf"))
 
 
 def test_span_wrapper_and_evaluate_into_agree() raises:
@@ -196,14 +222,26 @@ def test_span_wrapper_and_evaluate_into_agree() raises:
     var results = List[Float64](length=len(queries), fill=99.0)
     interpolator.evaluate_into(queries, results)
     var allocated = interpolator.evaluate(queries)
+    var derivatives = List[Float64](length=len(queries), fill=99.0)
+    interpolator.derivative_into(queries, derivatives)
+    var allocated_derivatives = interpolator.derivative(queries)
 
     for index in range(len(queries)):
         assert_equal(results[index], allocated[index])
         assert_equal(results[index], interpolator.evaluate(queries[index]))
+        assert_equal(derivatives[index], interpolator.derivative(queries[index]))
+        assert_equal(derivatives[index], allocated_derivatives[index])
 
     var short_results = List[Float64](length=3, fill=0.0)
     with assert_raises(contains="len(queries) = 7, len(results) = 3"):
         interpolator.evaluate_into(queries, short_results)
+    with assert_raises(
+        contains=(
+            "query and result buffers must have equal length: "
+            "len(queries) = 7, len(results) = 3"
+        )
+    ):
+        interpolator.derivative_into(queries, short_results)
 
 
 def test_closed_form_integral_and_equality_writable_surface() raises:
@@ -217,7 +255,7 @@ def test_closed_form_integral_and_equality_writable_surface() raises:
     assert_true(first != clamp)
     assert_true(
         String(first).startswith(
-            "AkimaInterpolator(6 knots on [0.0, 6.0], extrapolation=ERROR)"
+            "MakimaInterpolator(6 knots on [0.0, 6.0], extrapolation=ERROR)"
         )
     )
 

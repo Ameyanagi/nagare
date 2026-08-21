@@ -29,3 +29,17 @@ and uses semantic versioning after the first public release.
   run metadata identifies Git/lockfile state and fixed extreme cases use
   per-iteration `black_box` inputs, retained outputs, and non-zero semantic
   sentinels.
+- Allocating and caller-buffer batch first-derivative evaluation on every
+  differentiable interpolator, plus scalar second derivatives for the Hermite
+  family with explicit extrapolation semantics.
+- Scalar and batch `__call__` evaluation sugar on every interpolator while
+  retaining `evaluate` as the primary documented name.
+- Read-only `knots()` and `values()` views on every interpolator, plus
+  `slopes()` for user-supplied cubic Hermite slopes.
+
+### Changed
+
+- **Breaking:** Renamed `AkimaInterpolator` to `MakimaInterpolator` because the
+  implementation matches scipy `Akima1DInterpolator(method="makima")`, not its
+  classic `method="akima"` default. No compatibility alias is provided before
+  the first public release.

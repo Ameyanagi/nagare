@@ -53,10 +53,16 @@ def metadata_matches_fixture(interpolator: CubicSplineInterpolator) -> Bool:
 def test_metadata_and_exact_knot_reproduction() raises:
     var interpolator = hand_fixture()
     assert_true(metadata_matches_fixture(interpolator))
-    assert_equal(interpolator.evaluate(0.0), 0.0)
-    assert_equal(interpolator.evaluate(1.0), 1.0)
-    assert_equal(interpolator.evaluate(2.0), 0.0)
-    assert_equal(interpolator.evaluate(3.0), 1.0)
+    var expected_knots: List[Float64] = [0.0, 1.0, 2.0, 3.0]
+    var expected_values: List[Float64] = [0.0, 1.0, 0.0, 1.0]
+    var knots = interpolator.knots()
+    var values = interpolator.values()
+    for index in range(len(expected_knots)):
+        assert_equal(
+            interpolator.evaluate(expected_knots[index]), expected_values[index]
+        )
+        assert_equal(knots[index], expected_knots[index])
+        assert_equal(values[index], expected_values[index])
 
 
 def test_hand_derived_natural_spline_values() raises:
@@ -300,6 +306,26 @@ def test_evaluate_into_matches_allocating_wrapper() raises:
     var short_results = List[Float64](length=1, fill=0.0)
     with assert_raises(contains="len(queries) = 6, len(results) = 1"):
         interpolator.evaluate_into(queries, short_results)
+
+
+def test_batch_derivative_matches_scalar_and_checks_buffer_lengths() raises:
+    var queries: List[Float64] = [0.0, 0.5, 2.0, 3.0]
+    var interpolator = hand_fixture()
+    var allocated = interpolator.derivative(queries)
+    var results = List[Float64](length=len(queries), fill=99.0)
+    interpolator.derivative_into(queries, results)
+    for index in range(len(queries)):
+        assert_equal(allocated[index], interpolator.derivative(queries[index]))
+        assert_equal(results[index], allocated[index])
+
+    var short_results = List[Float64](length=1, fill=0.0)
+    with assert_raises(
+        contains=(
+            "query and result buffers must have equal length: "
+            "len(queries) = 4, len(results) = 1"
+        )
+    ):
+        interpolator.derivative_into(queries, short_results)
 
 
 def test_two_knot_spline_degenerates_to_a_straight_segment() raises:

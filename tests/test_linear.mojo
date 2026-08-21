@@ -58,6 +58,26 @@ def test_linear_interpolator_metadata_and_exact_knots() raises:
     assert_equal(interpolator.evaluate(5.0), 8.0)
 
 
+def test_call_sugar_and_table_accessors() raises:
+    var interpolator = reference_interpolator()
+    var expected_knots: List[Float64] = [0.0, 0.5, 2.0, 5.0]
+    var expected_values: List[Float64] = [1.0, 2.0, -1.0, 8.0]
+    var knots = interpolator.knots()
+    var values = interpolator.values()
+    assert_equal(len(knots), len(expected_knots))
+    assert_equal(len(values), len(expected_values))
+    for index in range(len(knots)):
+        assert_equal(knots[index], expected_knots[index])
+        assert_equal(values[index], expected_values[index])
+
+    assert_equal(interpolator(0.25), interpolator.evaluate(0.25))
+    var queries: List[Float64] = [0.0, 0.25, 2.0, 5.0]
+    var called = interpolator(queries)
+    var evaluated = interpolator.evaluate(queries)
+    for index in range(len(queries)):
+        assert_equal(called[index], evaluated[index])
+
+
 def test_linear_interpolator_reference_values() raises:
     var interpolator = reference_interpolator()
     assert_close(interpolator.evaluate(0.25), 1.5)
@@ -310,6 +330,26 @@ def test_evaluate_into_matches_allocating_wrapper() raises:
     var short_results = List[Float64](length=2, fill=0.0)
     with assert_raises(contains="len(queries) = 6, len(results) = 2"):
         interpolator.evaluate_into(queries, short_results)
+
+
+def test_batch_derivative_matches_scalar_and_checks_buffer_lengths() raises:
+    var queries: List[Float64] = [0.0, 0.25, 2.0, 5.0]
+    var interpolator = reference_interpolator()
+    var allocated = interpolator.derivative(queries)
+    var results = List[Float64](length=len(queries), fill=99.0)
+    interpolator.derivative_into(queries, results)
+    for index in range(len(queries)):
+        assert_equal(allocated[index], interpolator.derivative(queries[index]))
+        assert_equal(results[index], allocated[index])
+
+    var short_results = List[Float64](length=1, fill=0.0)
+    with assert_raises(
+        contains=(
+            "query and result buffers must have equal length: "
+            "len(queries) = 4, len(results) = 1"
+        )
+    ):
+        interpolator.derivative_into(queries, short_results)
 
 
 def test_batch_error_policy_rejects_out_of_domain_query() raises:

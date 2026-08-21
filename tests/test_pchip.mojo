@@ -130,6 +130,9 @@ def test_metadata_exact_knots_and_two_knot_special_case() raises:
     assert_close(two_knots.derivative(-2.0), -2.0)
     assert_close(two_knots.derivative(0.0), -2.0)
     assert_close(two_knots.derivative(3.0), -2.0)
+    assert_close(two_knots.second_derivative(-2.0), 0.0)
+    assert_close(two_knots.second_derivative(0.0), 0.0)
+    assert_close(two_knots.second_derivative(3.0), 0.0)
 
 
 def test_constructor_uses_shared_table_validation() raises:
@@ -159,12 +162,16 @@ def test_error_clamp_linear_and_fill_extrapolation() raises:
         _ = error.evaluate(-1.0)
     with assert_raises(contains="outside the knot domain"):
         _ = error.derivative(7.0)
+    with assert_raises(contains="outside the knot domain"):
+        _ = error.second_derivative(7.0)
 
     var clamp = reference_interpolator(ExtrapolationPolicy.CLAMP)
     assert_equal(clamp.evaluate(-1.0), 0.0)
     assert_equal(clamp.evaluate(7.0), 4.0)
     assert_equal(clamp.derivative(-1.0), 0.0)
     assert_equal(clamp.derivative(7.0), 0.0)
+    assert_equal(clamp.second_derivative(-1.0), 0.0)
+    assert_equal(clamp.second_derivative(7.0), 0.0)
 
     # scipy-compatible endpoint estimates are 46/15 on the left and 7/6 on
     # the right for the shared uneven table.
@@ -173,16 +180,23 @@ def test_error_clamp_linear_and_fill_extrapolation() raises:
     assert_close(linear.evaluate(7.0), 4.0 + 7.0 / 6.0)
     assert_close(linear.derivative(-1.0), 46.0 / 15.0)
     assert_close(linear.derivative(7.0), 7.0 / 6.0)
+    assert_equal(linear.second_derivative(-1.0), 0.0)
+    assert_equal(linear.second_derivative(7.0), 0.0)
 
     var default_fill = reference_interpolator(ExtrapolationPolicy.FILL)
     assert_true(default_fill.evaluate(-1.0) != default_fill.evaluate(-1.0))
     assert_true(default_fill.derivative(7.0) != default_fill.derivative(7.0))
+    assert_true(
+        default_fill.second_derivative(7.0) != default_fill.second_derivative(7.0)
+    )
 
     var custom_fill = reference_interpolator(ExtrapolationPolicy.fill(-3.25))
     assert_equal(custom_fill.evaluate(-1.0), -3.25)
     assert_equal(custom_fill.evaluate(7.0), -3.25)
     assert_equal(custom_fill.derivative(-1.0), -3.25)
     assert_equal(custom_fill.derivative(7.0), -3.25)
+    assert_equal(custom_fill.second_derivative(-1.0), -3.25)
+    assert_equal(custom_fill.second_derivative(7.0), -3.25)
 
 
 def test_non_finite_queries_always_raise() raises:
@@ -191,6 +205,8 @@ def test_non_finite_queries_always_raise() raises:
         _ = interpolator.evaluate(Float64("nan"))
     with assert_raises(contains="query must be finite"):
         _ = interpolator.derivative(Float64("-inf"))
+    with assert_raises(contains="query must be finite"):
+        _ = interpolator.second_derivative(Float64("inf"))
 
 
 def test_span_wrapper_and_evaluate_into_agree() raises:
@@ -199,14 +215,30 @@ def test_span_wrapper_and_evaluate_into_agree() raises:
     var results = List[Float64](length=len(queries), fill=99.0)
     interpolator.evaluate_into(queries, results)
     var allocated = interpolator.evaluate(queries)
+    var called = interpolator(queries)
+    var derivatives = List[Float64](length=len(queries), fill=99.0)
+    interpolator.derivative_into(queries, derivatives)
+    var allocated_derivatives = interpolator.derivative(queries)
 
     for index in range(len(queries)):
         assert_equal(results[index], allocated[index])
         assert_equal(results[index], interpolator.evaluate(queries[index]))
+        assert_equal(called[index], allocated[index])
+        assert_equal(derivatives[index], interpolator.derivative(queries[index]))
+        assert_equal(derivatives[index], allocated_derivatives[index])
+
+    assert_equal(interpolator(0.5), interpolator.evaluate(0.5))
 
     var short_results = List[Float64](length=1, fill=0.0)
     with assert_raises(contains="len(queries) = 7, len(results) = 1"):
         interpolator.evaluate_into(queries, short_results)
+    with assert_raises(
+        contains=(
+            "query and result buffers must have equal length: "
+            "len(queries) = 7, len(results) = 1"
+        )
+    ):
+        interpolator.derivative_into(queries, short_results)
 
 
 def test_closed_form_integrals_and_equality_writable_surface() raises:
