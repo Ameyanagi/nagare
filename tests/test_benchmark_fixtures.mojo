@@ -64,8 +64,9 @@ def test_extreme_fixtures_preserve_documented_numeric_contracts() raises:
     assert_true(central <= full_range.values[1])
     assert_equal(central, 0.0)
 
-    # The timed full-range sentinel stays on the overflow-avoiding path while
-    # producing a finite, non-zero checksum normalized by MAX_FINITE.
+    # The benchmark's full-range sentinel stays on the overflow-avoiding path
+    # while producing a finite, non-zero checksum normalized by MAX_FINITE.
+    # The latency harness repeats it more often to obtain a measurable sample.
     var extreme_query = Float64.MAX_FINITE / 4_096.0
     var normalized_checksum = 0.0
     for _ in range(1_024):

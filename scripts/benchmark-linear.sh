@@ -39,7 +39,7 @@ else
   exit 1
 fi
 
-printf '%s\n' 'metadata_schema=nagare-linear-benchmark-metadata-v2'
+printf '%s\n' 'metadata_schema=nagare-linear-benchmark-metadata-v3'
 printf 'run_utc=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 printf 'git_head=%s\n' "$benchmark_git_head"
 printf 'git_state=%s\n' "$benchmark_git_state"

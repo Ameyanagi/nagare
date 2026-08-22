@@ -110,6 +110,27 @@ def _validate_table(knots: List[Float64], values: List[Float64]) raises:
             )
 
 
+def _validate_sorted_queries(queries: Span[Float64, _]) raises:
+    """Validate finite, nondecreasing queries before a sorted batch write."""
+    for index in range(len(queries)):
+        var query = queries[index]
+        if not _is_finite(query):
+            raise Error(String("query must be finite: received ", query))
+        if index > 0 and query < queries[index - 1]:
+            raise Error(
+                String(
+                    "queries must be sorted in nondecreasing order: queries[",
+                    index,
+                    "] = ",
+                    query,
+                    " < queries[",
+                    index - 1,
+                    "] = ",
+                    queries[index - 1],
+                )
+            )
+
+
 struct LinearInterpolator(Copyable, Equatable, Writable):
     """An owning piecewise-linear interpolant over finite `Float64` data.
 
@@ -396,6 +417,109 @@ struct LinearInterpolator(Copyable, Equatable, Writable):
             )
         for index in range(len(queries)):
             results[index] = self.evaluate(queries[index])
+
+    def evaluate_sorted(self, queries: Span[Float64, _]) raises -> List[Float64]:
+        """Allocate and evaluate finite, nondecreasing queries monotonically.
+
+        The result is numerically identical to scalar `evaluate` for every
+        query. Unlike the order-agnostic batch API, this method exploits the
+        monotone query contract to binary-search the first interior interval,
+        then traverse only the remaining spanned intervals. Duplicate queries
+        and exact knots are supported.
+        """
+        var results = List[Float64](length=len(queries), fill=0.0)
+        self.evaluate_sorted_into(queries, results)
+        return results^
+
+    def evaluate_sorted_into(
+        self,
+        queries: Span[Float64, _],
+        results: Span[mut=True, Float64, _],
+    ) raises:
+        """Evaluate sorted queries into caller-owned storage without allocation.
+
+        Queries must be finite and sorted in nondecreasing order. The complete
+        query sequence and ERROR-policy domain bounds are validated before any
+        output is written. Extrapolated prefixes and suffixes follow the
+        interpolator's configured policy.
+        """
+        if len(queries) != len(results):
+            raise Error(
+                String(
+                    "query and result buffers must have equal length: ",
+                    "len(queries) = ",
+                    len(queries),
+                    ", len(results) = ",
+                    len(results),
+                )
+            )
+        _validate_sorted_queries(queries)
+        if len(queries) == 0:
+            return
+
+        var domain_start = self._knots[0]
+        var final_knot = len(self._knots) - 1
+        var domain_end = self._knots[final_knot]
+        var query_index = 0
+
+        # ERROR is transactional for the caller-owned buffer. Sortedness makes
+        # the first query sufficient for the lower bound. Find the first upper
+        # offender before writing so its diagnostic still matches scalar order.
+        if self._extrapolation == ExtrapolationPolicy.ERROR:
+            if queries[0] < domain_start:
+                raise Error(_domain_error_message(queries[0], domain_start, domain_end))
+            if queries[len(queries) - 1] > domain_end:
+                var lower = 0
+                var upper = len(queries)
+                while lower < upper:
+                    var middle = lower + (upper - lower) // 2
+                    if queries[middle] <= domain_end:
+                        lower = middle + 1
+                    else:
+                        upper = middle
+                raise Error(
+                    _domain_error_message(queries[lower], domain_start, domain_end)
+                )
+
+        # A sorted exterior prefix uses one endpoint policy and no interval
+        # searches. ERROR still rejects the first offending query.
+        while query_index < len(queries) and queries[query_index] < domain_start:
+            var query = queries[query_index]
+            if self._extrapolation == ExtrapolationPolicy.ERROR:
+                raise Error(_domain_error_message(query, domain_start, domain_end))
+            if self._extrapolation == ExtrapolationPolicy.CLAMP:
+                results[query_index] = self._values[0]
+            elif self._extrapolation.is_fill():
+                results[query_index] = self._extrapolation.fill_value()
+            else:
+                results[query_index] = self._evaluate_segment(0, query)
+            query_index += 1
+
+        # Exact interior knots remain right-biased, except the final knot,
+        # matching `_locate_interval_in_domain` and scalar evaluation exactly.
+        var final_segment = final_knot - 1
+        var segment = 0
+        if query_index < len(queries) and queries[query_index] <= domain_end:
+            segment = _locate_interval_in_domain(self._knots, queries[query_index])
+        while query_index < len(queries) and queries[query_index] <= domain_end:
+            var query = queries[query_index]
+            while segment < final_segment and query >= self._knots[segment + 1]:
+                segment += 1
+            results[query_index] = self._evaluate_segment(segment, query)
+            query_index += 1
+
+        # Any remaining sorted suffix lies above the domain.
+        while query_index < len(queries):
+            var query = queries[query_index]
+            if self._extrapolation == ExtrapolationPolicy.ERROR:
+                raise Error(_domain_error_message(query, domain_start, domain_end))
+            if self._extrapolation == ExtrapolationPolicy.CLAMP:
+                results[query_index] = self._values[final_knot]
+            elif self._extrapolation.is_fill():
+                results[query_index] = self._extrapolation.fill_value()
+            else:
+                results[query_index] = self._evaluate_segment(final_segment, query)
+            query_index += 1
 
     def __eq__(self, other: Self) -> Bool:
         """Compare validated tables and policy exactly.

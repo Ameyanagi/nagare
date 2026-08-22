@@ -89,6 +89,35 @@ def main() raises:
     print("at 2.5:", pchip.evaluate(2.5), cubic.evaluate(2.5))
 ```
 
+## Sorted resampling without repeated searches
+
+When linear-interpolation query coordinates are already finite and
+nondecreasing, use `evaluate_sorted` to binary-search the first interior query
+once, then traverse only the remaining spanned intervals instead of searching
+for every query. Duplicate coordinates and exact knots are supported, and
+extrapolated prefixes and suffixes use the interpolator's configured policy.
+For repeated workloads, `evaluate_sorted_into` reuses caller-owned storage:
+
+```mojo
+from nagare import ExtrapolationPolicy, LinearInterpolator
+from std.collections import List
+
+
+def main() raises:
+    var samples = LinearInterpolator(
+        [0.0, 1.0, 3.0],
+        [10.0, 12.0, 18.0],
+        extrapolation=ExtrapolationPolicy.CLAMP,
+    )
+    var queries: List[Float64] = [-1.0, 0.0, 0.5, 1.0, 2.0, 4.0]
+    var output = List[Float64](length=len(queries), fill=0.0)
+    samples.evaluate_sorted_into(queries, output)
+    print(output)
+```
+
+The order-agnostic `evaluate` and `evaluate_into` APIs remain the right choice
+for unsorted inputs.
+
 ## Sensor resampling example
 
 [`examples/resample_sensor.mojo`](examples/resample_sensor.mojo) resamples
@@ -156,6 +185,7 @@ pixi install --locked
 pixi run check
 pixi run example
 pixi run bench-linear
+pixi run profile-linear  # macOS sample or Linux perf
 ```
 
 The pinned Mojo compiler and all development dependencies are captured in

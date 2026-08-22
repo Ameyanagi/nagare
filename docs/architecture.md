@@ -56,11 +56,22 @@ selection stay at explicit effect or backend boundaries.
 Interpolators own their `List[Float64]` inputs, but Mojo 1.0 does not make
 underscore-prefixed fields private. Nagare treats those fields as private by
 convention, and direct mutation is outside the contract. Read-only metadata is
-`O(1)` and evaluation performs `O(log n)` interval search without rescanning
-the table. Callers who perform unusual direct access can request an explicit
-`O(n)` checkpoint through `validate()`.
+`O(1)` and scalar evaluation performs `O(log n)` interval search without
+rescanning the table. Linear interpolation also exposes a finite,
+nondecreasing-query batch path: it validates the query span once, binary-searches
+the first interior interval, advances one right-biased cursor across only the
+remaining spanned intervals, and writes caller-owned storage in
+`O(log n + s + m)`, where `s <= n` is the traversed segment range. The
+order-agnostic scalar batch remains the numerical oracle.
+Callers who perform unusual direct access can request an explicit `O(n)`
+checkpoint through `validate()`.
 
 Benchmark fixture generation and timing stay under `benchmarks/`; they are not
 root exports and are not installed as library modules. The benchmark calls only
 the documented root API, so it measures the same validation and arithmetic
 contract available to downstream consumers.
+
+The long-running profiling driver is separate from the latency benchmark so a
+sampling profiler observes steady-state compiled work without changing sample
+duration or benchmark statistics. Platform profiler output stays under
+`.pixi/profiles/` and is not a package artifact.

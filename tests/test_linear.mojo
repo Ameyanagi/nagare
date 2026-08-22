@@ -332,6 +332,147 @@ def test_evaluate_into_matches_allocating_wrapper() raises:
         interpolator.evaluate_into(queries, short_results)
 
 
+def test_sorted_batch_matches_scalar_with_duplicates_and_extrapolation() raises:
+    var queries: List[Float64] = [
+        -2.0,
+        -1.0,
+        0.0,
+        0.0,
+        0.25,
+        0.5,
+        0.5,
+        1.25,
+        2.0,
+        4.5,
+        5.0,
+        5.0,
+        6.0,
+    ]
+    for policy in [
+        ExtrapolationPolicy.CLAMP,
+        ExtrapolationPolicy.LINEAR,
+        ExtrapolationPolicy.fill(-7.5),
+    ]:
+        var interpolator = reference_interpolator(policy)
+        var sorted = interpolator.evaluate_sorted(queries)
+        assert_equal(len(sorted), len(queries))
+        for index in range(len(queries)):
+            assert_equal(sorted[index], interpolator.evaluate(queries[index]))
+
+
+def test_sorted_batch_reuses_output_and_covers_every_segment_tail() raises:
+    var knots = List[Float64]()
+    var values = List[Float64]()
+    var queries = List[Float64]()
+    for index in range(65):
+        knots.append(Float64(index))
+        values.append(Float64(index * index - 3 * index))
+        if index < 64:
+            queries.append(Float64(index))
+            queries.append(Float64(index) + 0.125)
+            queries.append(Float64(index) + 0.875)
+    queries.append(64.0)
+
+    var interpolator = LinearInterpolator(knots^, values^)
+    var results = List[Float64](length=len(queries), fill=-123.0)
+    interpolator.evaluate_sorted_into(queries, results)
+    for index in range(len(queries)):
+        assert_equal(results[index], interpolator.evaluate(queries[index]))
+
+    # A second call writes the caller-owned buffer rather than retaining state.
+    var repeated: List[Float64] = [0.0, 0.0, 1.0, 63.5, 64.0]
+    var repeated_results = List[Float64](length=len(repeated), fill=999.0)
+    interpolator.evaluate_sorted_into(repeated, repeated_results)
+    for index in range(len(repeated)):
+        assert_equal(repeated_results[index], interpolator.evaluate(repeated[index]))
+
+
+def test_sorted_batch_sparse_late_cluster_matches_scalar() raises:
+    var knots = List[Float64]()
+    var values = List[Float64]()
+    for index in range(4_097):
+        var knot = Float64(index) * 0.75
+        knots.append(knot)
+        values.append(knot * 1.5 + Float64(index % 7))
+
+    var interpolator = LinearInterpolator(knots^, values^)
+    var queries: List[Float64] = [
+        3_065.125,
+        3_066.0,
+        3_066.0,
+        3_069.375,
+        3_071.25,
+        3_072.0,
+    ]
+    var results = List[Float64](length=len(queries), fill=-999.0)
+    interpolator.evaluate_sorted_into(queries, results)
+    for index in range(len(queries)):
+        assert_equal(results[index], interpolator.evaluate(queries[index]))
+
+
+def test_sorted_batch_rejects_unsorted_nonfinite_and_short_output() raises:
+    var interpolator = reference_interpolator(ExtrapolationPolicy.CLAMP)
+    var unsorted: List[Float64] = [0.0, 1.0, 0.5]
+    with assert_raises(
+        contains="queries must be sorted in nondecreasing order: queries[2] = 0.5"
+    ):
+        _ = interpolator.evaluate_sorted(unsorted)
+
+    var nan_queries: List[Float64] = [0.0, Float64("nan")]
+    with assert_raises(contains="query must be finite: received nan"):
+        _ = interpolator.evaluate_sorted(nan_queries)
+    var positive_infinity: List[Float64] = [0.0, Float64("inf")]
+    with assert_raises(contains="query must be finite: received inf"):
+        _ = interpolator.evaluate_sorted(positive_infinity)
+    var negative_infinity: List[Float64] = [Float64("-inf"), 0.0]
+    with assert_raises(contains="query must be finite: received -inf"):
+        _ = interpolator.evaluate_sorted(negative_infinity)
+
+    var queries: List[Float64] = [0.0, 1.0]
+    var short_results: List[Float64] = [0.0]
+    with assert_raises(contains="len(queries) = 2, len(results) = 1"):
+        interpolator.evaluate_sorted_into(queries, short_results)
+
+    var empty = List[Float64]()
+    var empty_results = interpolator.evaluate_sorted(empty)
+    assert_equal(len(empty_results), 0)
+    interpolator.evaluate_sorted_into(empty, empty_results)
+
+
+def test_sorted_batch_error_policy_and_extreme_arithmetic_match_scalar() raises:
+    var interpolator = reference_interpolator()
+    var below: List[Float64] = [-0.1, 0.0]
+    with assert_raises(contains="outside the knot domain"):
+        _ = interpolator.evaluate_sorted(below)
+    var above: List[Float64] = [0.0, 5.1]
+    with assert_raises(contains="outside the knot domain"):
+        _ = interpolator.evaluate_sorted(above)
+
+    # ERROR bounds are preflighted transactionally before caller storage is
+    # touched, including an upper offender after valid interior queries.
+    var below_results: List[Float64] = [91.0, 92.0, 93.0]
+    var below_into: List[Float64] = [-0.1, 0.0, 1.0]
+    with assert_raises(contains="outside the knot domain"):
+        interpolator.evaluate_sorted_into(below_into, below_results)
+    assert_equal(below_results, [91.0, 92.0, 93.0])
+
+    var above_results: List[Float64] = [81.0, 82.0, 83.0, 84.0]
+    var above_into: List[Float64] = [0.0, 1.5, 5.1, 6.0]
+    with assert_raises(contains="query 5.1 is outside"):
+        interpolator.evaluate_sorted_into(above_into, above_results)
+    assert_equal(above_results, [81.0, 82.0, 83.0, 84.0])
+
+    var extreme = LinearInterpolator(
+        [-1e308, 1e308],
+        [-1e308, 1e308],
+        extrapolation=ExtrapolationPolicy.LINEAR,
+    )
+    var extreme_queries: List[Float64] = [-1.5e308, -5e307, 0.0, 5e307, 1.5e308]
+    var extreme_results = extreme.evaluate_sorted(extreme_queries)
+    for index in range(len(extreme_queries)):
+        assert_equal(extreme_results[index], extreme.evaluate(extreme_queries[index]))
+
+
 def test_batch_derivative_matches_scalar_and_checks_buffer_lengths() raises:
     var queries: List[Float64] = [0.0, 0.25, 2.0, 5.0]
     var interpolator = reference_interpolator()
