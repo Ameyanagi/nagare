@@ -2,7 +2,7 @@
 
 Interpolation and spline algorithms for Mojo.
 
-> **Experimental — API not yet released.**
+> **Experimental — the `0.x` API may change between minor releases.**
 
 ## Which interpolator?
 

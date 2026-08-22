@@ -1,9 +1,11 @@
 # Changelog
 
 This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
-and uses semantic versioning after the first public release.
+and uses semantic versioning for published releases.
 
 ## [Unreleased]
+
+## [0.1.0] - 2026-08-22
 
 ### Added
 
@@ -50,3 +52,6 @@ and uses semantic versioning after the first public release.
   implementation matches scipy `Akima1DInterpolator(method="makima")`, not its
   classic `method="akima"` default. No compatibility alias is provided before
   the first public release.
+
+[Unreleased]: https://github.com/Ameyanagi/nagare/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/Ameyanagi/nagare/releases/tag/v0.1.0
