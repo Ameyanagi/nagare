@@ -14,7 +14,8 @@ non-goals are maintained in [the v0.1 execution plan](v0.1-plan.md).
 
 - Add ergonomic APIs only after v0.1 usage demonstrates repeated friction.
 - Expand examples and integration fixtures.
-- Publish the first modular-community recipe when the package is useful alone.
+- Maintain native `mojo-channel` packages and keep modular-community changes
+  behind its separate review.
 
 ## v0.3 — Performance
 

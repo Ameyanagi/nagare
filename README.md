@@ -2,7 +2,7 @@
 
 Interpolation and spline algorithms for Mojo.
 
-> **Experimental — API not yet released.**
+> **Experimental — the `0.x` API may change between minor releases.**
 
 ## Which interpolator?
 
@@ -28,6 +28,9 @@ channels = [
   "conda-forge",
 ]
 ```
+
+Keep this order: the ecosystem package channel has highest priority, Modular's
+`max` channel supplies the Mojo compiler, and conda-forge supplies shared tools.
 
 Then add Nagare:
 
