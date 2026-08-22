@@ -92,9 +92,71 @@ def test_metadata_exact_knots_and_supplied_derivatives() raises:
     var knots: List[Float64] = [0.0, 1.0, 2.5, 3.0, 4.5, 6.0]
     var values: List[Float64] = [0.0, 2.0, 1.0, 3.5, 3.0, 4.0]
     var slopes: List[Float64] = [1.0, -0.5, 2.0, 0.0, 1.5, -1.0]
+    var stored_knots = interpolator.knots()
+    var stored_values = interpolator.values()
+    var stored_slopes = interpolator.slopes()
     for index in range(len(knots)):
         assert_equal(interpolator.evaluate(knots[index]), values[index])
         assert_close(interpolator.derivative(knots[index]), slopes[index], atol=1e-12)
+        assert_equal(stored_knots[index], knots[index])
+        assert_equal(stored_values[index], values[index])
+        assert_equal(stored_slopes[index], slopes[index])
+
+
+def test_second_derivative_reproduces_linear_and_quadratic_tables() raises:
+    var affine = CubicHermiteInterpolator([0.0, 1.0], [0.0, 1.0], [1.0, 1.0])
+    var affine_queries: List[Float64] = [0.0, 0.25, 0.5, 1.0]
+    for query in affine_queries:
+        assert_close(affine.second_derivative(query), 0.0, atol=1e-12)
+
+    # Endpoint values and slopes come from y=x^2, which one Hermite segment
+    # reproduces exactly on [0, 2]. Its second derivative is identically two.
+    var quadratic = CubicHermiteInterpolator([0.0, 2.0], [0.0, 4.0], [0.0, 4.0])
+    var quadratic_queries: List[Float64] = [0.0, 0.5, 1.0, 1.5, 2.0]
+    for query in quadratic_queries:
+        assert_close(quadratic.second_derivative(query), 2.0, atol=1e-12)
+
+    # The left segment has curvature -6 at x=1, while the right segment has
+    # zero curvature. The shared right-biased interval rule selects the latter.
+    var discontinuous = CubicHermiteInterpolator(
+        [0.0, 1.0, 2.0],
+        [0.0, 1.0, 1.0],
+        [0.0, 0.0, 0.0],
+    )
+    assert_equal(discontinuous.second_derivative(1.0), 0.0)
+
+
+def test_second_derivative_extrapolation_policies() raises:
+    var error = CubicHermiteInterpolator([0.0, 2.0], [0.0, 4.0], [0.0, 4.0])
+    with assert_raises(contains="outside the knot domain"):
+        _ = error.second_derivative(-0.5)
+
+    var clamp = CubicHermiteInterpolator(
+        [0.0, 2.0],
+        [0.0, 4.0],
+        [0.0, 4.0],
+        extrapolation=ExtrapolationPolicy.CLAMP,
+    )
+    assert_equal(clamp.second_derivative(-0.5), 0.0)
+    assert_equal(clamp.second_derivative(2.5), 0.0)
+
+    var linear = CubicHermiteInterpolator(
+        [0.0, 2.0],
+        [0.0, 4.0],
+        [0.0, 4.0],
+        extrapolation=ExtrapolationPolicy.LINEAR,
+    )
+    assert_equal(linear.second_derivative(-0.5), 0.0)
+    assert_equal(linear.second_derivative(2.5), 0.0)
+
+    var fill = CubicHermiteInterpolator(
+        [0.0, 2.0],
+        [0.0, 4.0],
+        [0.0, 4.0],
+        extrapolation=ExtrapolationPolicy.fill(-7.5),
+    )
+    assert_equal(fill.second_derivative(-0.5), -7.5)
+    assert_equal(fill.second_derivative(2.5), -7.5)
 
 
 def test_constructor_rejects_invalid_slope_tables_with_details() raises:
@@ -181,10 +243,12 @@ def test_error_clamp_linear_and_fill_extrapolation() raises:
 
 def test_non_finite_queries_always_raise() raises:
     var interpolator = reference_interpolator(ExtrapolationPolicy.FILL)
-    with assert_raises(contains="query must be finite"):
+    with assert_raises(contains="query must be finite: received nan"):
         _ = interpolator.evaluate(Float64("nan"))
     with assert_raises(contains="query must be finite"):
         _ = interpolator.derivative(Float64("inf"))
+    with assert_raises(contains="query must be finite"):
+        _ = interpolator.second_derivative(Float64("-inf"))
 
 
 def test_span_wrapper_and_evaluate_into_agree() raises:
@@ -193,15 +257,27 @@ def test_span_wrapper_and_evaluate_into_agree() raises:
     var results = List[Float64](length=len(queries), fill=99.0)
     interpolator.evaluate_into(queries, results)
     var allocated = interpolator.evaluate(queries)
+    var derivatives = List[Float64](length=len(queries), fill=99.0)
+    interpolator.derivative_into(queries, derivatives)
+    var allocated_derivatives = interpolator.derivative(queries)
 
     assert_equal(len(allocated), len(results))
     for index in range(len(results)):
         assert_equal(results[index], allocated[index])
         assert_equal(results[index], interpolator.evaluate(queries[index]))
+        assert_equal(derivatives[index], interpolator.derivative(queries[index]))
+        assert_equal(derivatives[index], allocated_derivatives[index])
 
     var short_results = List[Float64](length=2, fill=0.0)
     with assert_raises(contains="len(queries) = 7, len(results) = 2"):
         interpolator.evaluate_into(queries, short_results)
+    with assert_raises(
+        contains=(
+            "query and result buffers must have equal length: "
+            "len(queries) = 7, len(results) = 2"
+        )
+    ):
+        interpolator.derivative_into(queries, short_results)
 
 
 def test_closed_form_integral_and_equality_writable_surface() raises:

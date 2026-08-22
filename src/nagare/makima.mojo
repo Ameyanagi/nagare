@@ -1,4 +1,4 @@
-"""Modified Akima piecewise-cubic Hermite interpolation."""
+"""Modified Akima (makima) piecewise-cubic Hermite interpolation."""
 
 from std.collections import List
 from std.io import Writable, Writer
@@ -72,14 +72,16 @@ def _makima_slopes(knots: List[Float64], values: List[Float64]) -> List[Float64]
     return slopes^
 
 
-struct AkimaInterpolator(Copyable, Equatable, Writable):
+struct MakimaInterpolator(Copyable, Equatable, Writable):
     """Modified Akima (makima) C1 piecewise-cubic interpolant.
+
+    Matches scipy `Akima1DInterpolator(method="makima")`, not the default
+    `method="akima"`. Classic Akima is deliberately not offered.
 
     Construction requires at least four knots, validates the table, and derives
     local modified-Akima slopes in O(n). Each query takes O(log n). Changing one
     data point perturbs only nearby segments, while the modified weights reduce
-    overshoot and define equal-difference cases. Classic Akima is deliberately
-    not offered as a method knob.
+    overshoot and define equal-difference cases.
 
     The shared `CubicHermiteInterpolator` owns the table and is the sole value,
     derivative, batch, and extrapolation engine. Its validated representation
@@ -110,6 +112,14 @@ struct AkimaInterpolator(Copyable, Equatable, Writable):
         _validate_makima_table(self._engine._knots, self._engine._values)
         self._engine.validate()
 
+    def knots(self) -> Span[Float64, origin_of(self._engine._knots)]:
+        """Read-only view of the validated knot sequence."""
+        return Span(self._engine._knots)
+
+    def values(self) -> Span[Float64, origin_of(self._engine._values)]:
+        """Read-only view of the validated value sequence."""
+        return Span(self._engine._values)
+
     def knot_count(self) -> Int:
         """Return the knot count."""
         return self._engine.knot_count()
@@ -131,6 +141,10 @@ struct AkimaInterpolator(Copyable, Equatable, Writable):
         """
         return self._engine.evaluate(x)
 
+    def __call__(self, x: Float64) raises -> Float64:
+        """Call `evaluate`; `evaluate` is the primary documented name."""
+        return self.evaluate(x)
+
     def derivative(self, x: Float64) raises -> Float64:
         """Evaluate the first derivative under the configured policy.
 
@@ -139,6 +153,34 @@ struct AkimaInterpolator(Copyable, Equatable, Writable):
         query. Non-finite queries always raise.
         """
         return self._engine.derivative(x)
+
+    def derivative(self, queries: Span[Float64, _]) raises -> List[Float64]:
+        """Allocate and return first derivatives for finite queries in order.
+
+        Raises on the first offending query and returns no partial results.
+        Empty input returns an empty list.
+        """
+        return self._engine.derivative(queries)
+
+    def derivative_into(
+        self,
+        queries: Span[Float64, _],
+        results: Span[mut=True, Float64, _],
+    ) raises:
+        """Evaluate each first derivative into `results` without allocating.
+
+        Raises if the buffer lengths differ or on the first offending query;
+        results contents are unspecified after a raise.
+        """
+        self._engine.derivative_into(queries, results)
+
+    def second_derivative(self, x: Float64) raises -> Float64:
+        """Evaluate the policy-aware second derivative.
+
+        At an interior knot, the Hermite engine selects the segment to its
+        right; the final knot selects the final segment.
+        """
+        return self._engine.second_derivative(x)
 
     def integrate(self, a: Float64, b: Float64) raises -> Float64:
         """Definite integral over `[a, b]` (sign-flipped when `a > b`).
@@ -156,6 +198,10 @@ struct AkimaInterpolator(Copyable, Equatable, Writable):
         Empty input returns an empty list.
         """
         return self._engine.evaluate(queries)
+
+    def __call__(self, queries: Span[Float64, _]) raises -> List[Float64]:
+        """Call `evaluate`; `evaluate` is the primary documented name."""
+        return self.evaluate(queries)
 
     def evaluate_into(
         self,
@@ -184,7 +230,7 @@ struct AkimaInterpolator(Copyable, Equatable, Writable):
 
     def write_to[W: Writer](self, mut writer: W):
         writer.write(
-            "AkimaInterpolator(",
+            "MakimaInterpolator(",
             self.knot_count(),
             " knots on [",
             self.domain_start(),

@@ -6,13 +6,15 @@ platforms = ["osx-arm64", "linux-64", "linux-aarch64"]
 version = "0.0.0"
 
 [tasks]
-bench-linear = { cmd = "bash scripts/benchmark-linear.sh", description = "Benchmark linear construction and scalar evaluation" }
-check = { depends-on = ["format-check", "test", "precompile"], description = "Run the complete validation suite" }
+bench-linear = { cmd = "bash scripts/benchmark-linear.sh", description = "Benchmark linear construction, scalar, and sorted evaluation" }
+check = { depends-on = ["format-check", "test", "precompile", "readme-check"], description = "Run the complete validation suite" }
 example = { cmd = "mojo run -I src examples/basic.mojo", description = "Run the structural smoke example" }
 format = { cmd = "bash scripts/format.sh", description = "Format Mojo source files" }
 format-check = { cmd = "bash scripts/check-format.sh", description = "Verify Mojo formatting without modifying source" }
 package = { cmd = "rattler-build build --recipe conda.recipe/recipe.yaml -c conda-forge -c https://conda.modular.com/max -c https://repo.prefix.dev/modular-community", description = "Build the local Conda package" }
 precompile = { cmd = "mojo precompile --Werror --warn-on-unstable-apis src/nagare -o .pixi/nagare.mojoc", description = "Precompile the package with warnings as errors" }
+profile-linear = { cmd = "bash scripts/profile-linear.sh", description = "Profile compiled scalar and sorted linear batches" }
+readme-check = { cmd = "bash scripts/check-readme.sh", description = "Compile every fenced Mojo block in the README" }
 test = { cmd = "bash scripts/test.sh", description = "Run all Mojo TestSuite files" }
 
 [dependencies]

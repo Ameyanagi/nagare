@@ -102,6 +102,25 @@ def _derivative_segment(
     )
 
 
+def _second_derivative_segment(
+    knots: List[Float64],
+    values: List[Float64],
+    slopes: List[Float64],
+    index: Int,
+    x: Float64,
+) -> Float64:
+    """Evaluate the second derivative of one cubic Hermite interval."""
+    var x0 = knots[index]
+    var x1 = knots[index + 1]
+    var width = x1 - x0
+    var parameter = _segment_parameter(x0, x1, x)
+    return (
+        (12.0 * parameter - 6.0) * (values[index] - values[index + 1]) / width
+        + (6.0 * parameter - 4.0) * slopes[index]
+        + (6.0 * parameter - 2.0) * slopes[index + 1]
+    ) / width
+
+
 def _hermite_antiderivative(
     parameter: Float64,
     width: Float64,
@@ -226,6 +245,18 @@ struct CubicHermiteInterpolator(Copyable, Equatable, Writable):
         """Explicitly revalidate the stored knot, value, and slope table."""
         _validate_hermite_table(self._knots, self._values, self._slopes)
 
+    def knots(self) -> Span[Float64, origin_of(self._knots)]:
+        """Read-only view of the validated knot sequence."""
+        return Span(self._knots)
+
+    def values(self) -> Span[Float64, origin_of(self._values)]:
+        """Read-only view of the validated value sequence."""
+        return Span(self._values)
+
+    def slopes(self) -> Span[Float64, origin_of(self._slopes)]:
+        """Read-only view of the validated slope sequence."""
+        return Span(self._slopes)
+
     def knot_count(self) -> Int:
         """Return the knot count."""
         return len(self._knots)
@@ -246,7 +277,7 @@ struct CubicHermiteInterpolator(Copyable, Equatable, Writable):
         payload outside the domain.
         """
         if not _is_finite(x):
-            raise Error("query must be finite")
+            raise Error(String("query must be finite: received ", x))
 
         if x < self._knots[0]:
             if self._extrapolation == ExtrapolationPolicy.ERROR:
@@ -288,6 +319,10 @@ struct CubicHermiteInterpolator(Copyable, Equatable, Writable):
             x,
         )
 
+    def __call__(self, x: Float64) raises -> Float64:
+        """Call `evaluate`; `evaluate` is the primary documented name."""
+        return self.evaluate(x)
+
     def derivative(self, x: Float64) raises -> Float64:
         """Evaluate the first derivative under the configured policy.
 
@@ -296,7 +331,7 @@ struct CubicHermiteInterpolator(Copyable, Equatable, Writable):
         query. Non-finite queries always raise.
         """
         if not _is_finite(x):
-            raise Error("query must be finite")
+            raise Error(String("query must be finite: received ", x))
 
         if x < self._knots[0]:
             if self._extrapolation == ExtrapolationPolicy.ERROR:
@@ -324,6 +359,80 @@ struct CubicHermiteInterpolator(Copyable, Equatable, Writable):
             return _right_slope(self._slopes)
 
         return _derivative_segment(
+            self._knots,
+            self._values,
+            self._slopes,
+            _locate_interval_in_domain(self._knots, x),
+            x,
+        )
+
+    def derivative(self, queries: Span[Float64, _]) raises -> List[Float64]:
+        """Allocate and return first derivatives for finite queries in order.
+
+        Raises on the first offending query and returns no partial results.
+        Empty input returns an empty list.
+        """
+        var results = List[Float64](length=len(queries), fill=0.0)
+        self.derivative_into(queries, results)
+        return results^
+
+    def derivative_into(
+        self,
+        queries: Span[Float64, _],
+        results: Span[mut=True, Float64, _],
+    ) raises:
+        """Evaluate each first derivative into `results` without allocating.
+
+        Raises if the buffer lengths differ or on the first offending query;
+        results contents are unspecified after a raise.
+        """
+        if len(queries) != len(results):
+            raise Error(
+                String(
+                    "query and result buffers must have equal length: ",
+                    "len(queries) = ",
+                    len(queries),
+                    ", len(results) = ",
+                    len(results),
+                )
+            )
+        for index in range(len(queries)):
+            results[index] = self.derivative(queries[index])
+
+    def second_derivative(self, x: Float64) raises -> Float64:
+        """Evaluate the second derivative under the configured policy.
+
+        Interior knots select the segment to their right, matching evaluation's
+        interval search; the final knot selects the final segment. Outside the
+        domain, `CLAMP` returns zero, the affine `LINEAR` tangent-ray extension
+        also returns zero, `FILL` returns its payload, and `ERROR` rejects the
+        query. Non-finite queries always raise.
+        """
+        if not _is_finite(x):
+            raise Error(String("query must be finite: received ", x))
+
+        if x < self._knots[0]:
+            if self._extrapolation == ExtrapolationPolicy.ERROR:
+                raise Error(
+                    _domain_error_message(
+                        x, self._knots[0], self._knots[len(self._knots) - 1]
+                    )
+                )
+            if self._extrapolation.is_fill():
+                return self._extrapolation.fill_value()
+            return 0.0
+
+        var final_knot = len(self._knots) - 1
+        if x > self._knots[final_knot]:
+            if self._extrapolation == ExtrapolationPolicy.ERROR:
+                raise Error(
+                    _domain_error_message(x, self._knots[0], self._knots[final_knot])
+                )
+            if self._extrapolation.is_fill():
+                return self._extrapolation.fill_value()
+            return 0.0
+
+        return _second_derivative_segment(
             self._knots,
             self._values,
             self._slopes,
@@ -405,6 +514,10 @@ struct CubicHermiteInterpolator(Copyable, Equatable, Writable):
         var results = List[Float64](length=len(queries), fill=0.0)
         self.evaluate_into(queries, results)
         return results^
+
+    def __call__(self, queries: Span[Float64, _]) raises -> List[Float64]:
+        """Call `evaluate`; `evaluate` is the primary documented name."""
+        return self.evaluate(queries)
 
     def evaluate_into(
         self,

@@ -117,6 +117,14 @@ struct PchipInterpolator(Copyable, Equatable, Writable):
         """Explicitly revalidate the stored Hermite table."""
         self._engine.validate()
 
+    def knots(self) -> Span[Float64, origin_of(self._engine._knots)]:
+        """Read-only view of the validated knot sequence."""
+        return Span(self._engine._knots)
+
+    def values(self) -> Span[Float64, origin_of(self._engine._values)]:
+        """Read-only view of the validated value sequence."""
+        return Span(self._engine._values)
+
     def knot_count(self) -> Int:
         """Return the knot count."""
         return self._engine.knot_count()
@@ -138,6 +146,10 @@ struct PchipInterpolator(Copyable, Equatable, Writable):
         """
         return self._engine.evaluate(x)
 
+    def __call__(self, x: Float64) raises -> Float64:
+        """Call `evaluate`; `evaluate` is the primary documented name."""
+        return self.evaluate(x)
+
     def derivative(self, x: Float64) raises -> Float64:
         """Evaluate the first derivative under the configured policy.
 
@@ -146,6 +158,34 @@ struct PchipInterpolator(Copyable, Equatable, Writable):
         query. Non-finite queries always raise.
         """
         return self._engine.derivative(x)
+
+    def derivative(self, queries: Span[Float64, _]) raises -> List[Float64]:
+        """Allocate and return first derivatives for finite queries in order.
+
+        Raises on the first offending query and returns no partial results.
+        Empty input returns an empty list.
+        """
+        return self._engine.derivative(queries)
+
+    def derivative_into(
+        self,
+        queries: Span[Float64, _],
+        results: Span[mut=True, Float64, _],
+    ) raises:
+        """Evaluate each first derivative into `results` without allocating.
+
+        Raises if the buffer lengths differ or on the first offending query;
+        results contents are unspecified after a raise.
+        """
+        self._engine.derivative_into(queries, results)
+
+    def second_derivative(self, x: Float64) raises -> Float64:
+        """Evaluate the policy-aware second derivative.
+
+        At an interior knot, the Hermite engine selects the segment to its
+        right; the final knot selects the final segment.
+        """
+        return self._engine.second_derivative(x)
 
     def integrate(self, a: Float64, b: Float64) raises -> Float64:
         """Definite integral over `[a, b]` (sign-flipped when `a > b`).
@@ -163,6 +203,10 @@ struct PchipInterpolator(Copyable, Equatable, Writable):
         Empty input returns an empty list.
         """
         return self._engine.evaluate(queries)
+
+    def __call__(self, queries: Span[Float64, _]) raises -> List[Float64]:
+        """Call `evaluate`; `evaluate` is the primary documented name."""
+        return self.evaluate(queries)
 
     def evaluate_into(
         self,

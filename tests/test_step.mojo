@@ -87,7 +87,7 @@ def test_error_clamp_and_fill_extrapolation_policies() raises:
     assert_equal(custom_fill.evaluate(5.0), -1.5)
     assert_equal(custom_fill.evaluate(1.0), 20.0)
 
-    with assert_raises(contains="query must be finite"):
+    with assert_raises(contains="query must be finite: received nan"):
         _ = custom_fill.evaluate(Float64("nan"))
 
 
@@ -123,11 +123,15 @@ def test_batch_and_evaluate_into_agree() raises:
     interpolator.evaluate_into(queries, results)
 
     var allocated = interpolator.evaluate(queries)
+    var called = interpolator(queries)
     var expected: List[Float64] = [-1.5, 10.0, 20.0, 20.0, 40.0, -1.5]
     assert_equal(len(results), len(expected))
     for index in range(len(results)):
         assert_equal(results[index], expected[index])
         assert_equal(allocated[index], results[index])
+        assert_equal(called[index], results[index])
+
+    assert_equal(interpolator(0.75), interpolator.evaluate(0.75))
 
     var short_results = List[Float64](length=2, fill=0.0)
     with assert_raises(contains="len(queries) = 6, len(results) = 2"):

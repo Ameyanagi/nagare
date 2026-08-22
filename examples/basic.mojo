@@ -1,4 +1,5 @@
 from nagare import ExtrapolationPolicy, LinearInterpolator
+from std.collections import List
 
 
 def main() raises:
@@ -10,3 +11,8 @@ def main() raises:
 
     print("temperature at t=5:", temperature.evaluate(5.0))
     print("clamped temperature at t=40:", temperature.evaluate(40.0))
+
+    var query_times: List[Float64] = [-5.0, 0.0, 5.0, 20.0, 40.0]
+    var temperatures = List[Float64](length=len(query_times), fill=0.0)
+    temperature.evaluate_sorted_into(query_times, temperatures)
+    print("sorted batch:", temperatures)
