@@ -29,6 +29,9 @@ channels = [
 ]
 ```
 
+Keep this order: the ecosystem package channel has highest priority, Modular's
+`max` channel supplies the Mojo compiler, and conda-forge supplies shared tools.
+
 Then add Nagare:
 
 ```sh
