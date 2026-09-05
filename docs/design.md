@@ -39,6 +39,21 @@ small central offset can be below one ULP after normalization. The contract in
 that ill-conditioned case is a finite result inside the endpoint hull, not
 exact affine recovery.
 
+## Custom interval lookup
+
+`KnotIndex` is the small owned counterpart to `locate_interval`. It validates
+finite, strictly increasing knots at construction and trusts its private-by-
+convention storage thereafter. `validate()` provides an explicit checkpoint.
+Metadata and the read-only `knots()` view are non-raising and O(1); `locate(x)`
+validates the new finite, in-domain query and uses the same right-biased binary
+search as every interpolant. Construction costs O(n); Q queries cost
+O(Q log n), avoiding the one-shot API's O(Q n) knot validation.
+
+`locate_into` accepts spans and writes into caller-owned integer storage without
+allocating. It supports unsorted and repeated queries, checks matching buffer
+lengths, and has the same error contract as interpolation's `evaluate_into`:
+results are unspecified after an invalid query raises.
+
 ## Cubic spline boundaries
 
 `CubicSplineInterpolator` defaults to scipy-compatible not-a-knot boundaries.
