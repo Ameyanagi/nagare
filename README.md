@@ -92,6 +92,33 @@ def main() raises:
     print("at 2.5:", pchip.evaluate(2.5), cubic.evaluate(2.5))
 ```
 
+## Repeated interval lookup for custom operations
+
+Use `KnotIndex` when your own operation repeatedly needs interval indices.
+Construction takes ownership and validates the knots once in O(n); each
+`locate` checks only the new query and searches in O(log n). Exact interior
+knots select the interval to their right, and the final knot selects the last
+interval. Queries must be finite and inside the inclusive knot domain.
+
+```mojo
+from nagare import KnotIndex
+from std.collections import List
+
+
+def main() raises:
+    var intervals = KnotIndex([0.0, 1.0, 3.0])
+    print(intervals.locate(1.0))  # 1
+    var queries: List[Float64] = [3.0, 0.25, 1.0]
+    var indices = List[Int](length=len(queries), fill=0)
+    intervals.locate_into(queries, indices)  # No allocation or knot rescans
+    print(indices)  # [1, 0, 1]
+```
+
+Pass `knots.copy()` explicitly if the caller also needs to own the source list.
+`knots()` returns a read-only view. The one-shot `locate_interval(knots, x)`
+remains useful for isolated calls and validates its knot input each time.
+See the [lookup benchmark](benchmarks/SEARCH.md) for reproducible timings.
+
 ## Sorted resampling without repeated searches
 
 When linear-interpolation query coordinates are already finite and

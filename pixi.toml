@@ -6,6 +6,7 @@ platforms = ["osx-arm64", "linux-64", "linux-aarch64"]
 version = "0.1.0"
 
 [tasks]
+bench-search = { cmd = "bash scripts/benchmark-search.sh", description = "Compare one-shot and reusable interval lookup in optimized builds" }
 bench-linear = { cmd = "bash scripts/benchmark-linear.sh", description = "Benchmark linear construction, scalar, and sorted evaluation" }
 check = { depends-on = ["format-check", "test", "precompile", "readme-check"], description = "Run the complete validation suite" }
 example = { cmd = "mojo run -I src examples/basic.mojo", description = "Run the structural smoke example" }

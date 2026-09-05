@@ -6,5 +6,5 @@ from .hermite import CubicHermiteInterpolator
 from .linear import LinearInterpolator
 from .makima import MakimaInterpolator
 from .pchip import PchipInterpolator
-from .search import locate_interval
+from .search import KnotIndex, locate_interval
 from .step import StepInterpolator, StepMode
