@@ -94,6 +94,10 @@ def main() raises:
 
 ## Repeated interval lookup for custom operations
 
+`KnotIndex` is an **unreleased API available in the current source checkout**;
+the published 0.1.0 package does not include it. Run the example below from the
+checkout with `pixi run --locked mojo run -I src my_file.mojo`.
+
 Use `KnotIndex` when your own operation repeatedly needs interval indices.
 Construction takes ownership and validates the knots once in O(n); each
 `locate` checks only the new query and searches in O(log n). Exact interior

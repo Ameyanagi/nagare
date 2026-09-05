@@ -121,7 +121,7 @@ struct KnotIndex(Copyable, Equatable, Writable):
 
     def knots(self) -> Span[Float64, origin_of(self._knots)]:
         """Return a read-only view without copying or revalidating knots."""
-        return self._knots
+        return Span(self._knots)
 
     def locate(self, x: Float64) raises -> Int:
         """Return the interval for a finite query in the inclusive domain.

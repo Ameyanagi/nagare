@@ -2,6 +2,7 @@
 
 from nagare import KnotIndex, locate_interval
 from std.benchmark import black_box, keep
+from std.collections import List
 from std.time import perf_counter_ns
 
 comptime SAMPLE_COUNT = 31
